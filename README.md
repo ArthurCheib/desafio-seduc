@@ -4,7 +4,7 @@ Nesse sentido, o Desafio Seduc de Dados Abertos visa justamente aproximar a Secr
 
 Conjunto de bases de dados utilizados:
 
--dados anonimizados de gestores;
--docentes;
--alunos e
--funcionários das escolas.
+- dados anonimizados de gestores;
+- docentes;
+- alunos e
+- funcionários das escolas.
