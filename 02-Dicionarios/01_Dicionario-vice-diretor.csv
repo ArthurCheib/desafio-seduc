@@ -1,0 +1,15 @@
+﻿ESTRUTURA - SQL;
+CD_ESCOLA;Código de Escola
+CD_SITUACAO;Código da situação da escola
+DIRETORIA;Diretoria de Ensino da CD_ESCOLA
+CD_UNIDADE;Código da Unidade Administrativa
+NOME_UNID_ADM;Denominação da UA de Exercício
+NR_DI;Dígito Identificador
+CD_CARGO;Código do Cargo de Exercício
+2014;Ano de exercício
+2015;Ano de exercício
+2016;Ano de exercício
+2017;Ano de exercício
+2018;Ano de exercício
+2019;Ano de exercício
+id_interno;Código de anonimização da base

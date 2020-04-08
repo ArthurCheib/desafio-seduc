@@ -1,0 +1,32 @@
+﻿PORTAL DADOS ABERTOS;
+BANCO DE DADOS :;CGRH_APOIO
+FONTE                     :;CADASTRO FUNCIONAL / CADASTRO CARGA HORÁRIA - SEDUC
+;
+TABELA 2               :;DBO.BASE_CARGA_HOR_SALA_AULA_0419
+;
+ESTRUTURA - SQL;
+REGIAO;Região de Exercício (Capital, Grande São Paulo, Interior, Órgãos Centrais)
+NOMEDE;Diretoria de Ensino  da UA_Exercício
+CD_INEP;Código INEP - Cadastro de Escolas
+CODESC;Código CIE da Escola (da UA de Exercício)
+CATESC;"Categoria da Escola (1=Regular; 2=Vinculada)"
+TPESC;Tipo da Escola
+UA;Código de UA de Exercício
+NOMEESC;Denominação da Escola
+NM_MUNICIPIO;Município da UA de Exercício
+MODAL;Modalidade de ensino
+DI;Dígito Identificador
+CARGO_C;Código do Cargo de Classificação
+NM_CARGOC;Denominação do  Cargo de Classificação
+CODMAE;Código Disciplina Mãe
+DEN_CODMAE;Denominação Disciplina Mãe
+CICLO;"Grau de Ensino: CI-Séries iniciais; CII-Séries Finais; EM-Ensino Médio "
+MATERIA;Código Matéria
+DEN_MATERIA;Denominação Matéria
+TOT_AULA_LIVRE;Total Aulas Livres Atribuídas
+TOT_AULA_SUBST;Total Aulas em Substituição Atribuídas
+TOT_GERAL_AULA;Total Aulas Atribuídas
+TOT_AULA_LIVRE_NOTURNO;Total Aulas Livres - Noturno
+TOT_AULA_SUBST_NOTURNO;Total Aulas em Substituição - Noturno
+TOT_AULAS_NOTURNO;Total Aulas - Noturno
+JORNADA;"Jornada (C-Completa; B-Básica; I-Inicial; R-Reduzida)"

@@ -1,0 +1,9 @@
+﻿Nome do Campo;Descrição do Capo ;Tipo do Dado 
+CD_ESCOLA;Código da escola;Numérico inteiro
+NM_COMPLETO_ESCOLA;Nome completo da escola;TEXTO
+COD_DISCIPLINA;Código da disciplina;Numérico inteiro
+NOME_DISCIPLINA;Nome da disciplina;TEXTO
+CD_TURMA;Código da turma;Numérico inteiro
+NR_HORA_AULA_SEMANA;Qtd de hora por aula na semana;Numérico inteiro
+CD_QUADRO_AULA;Código do quadro de aula;Numérico inteiro
+MES_REF;Mês de referência;Numérico inteiro

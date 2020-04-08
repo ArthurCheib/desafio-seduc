@@ -1,0 +1,8 @@
+﻿Nome do Campo;Descrição do Capo ;Tipo do Dado 
+CD_CLUSTERS;Código Clusters;Numérico inteiro
+CD_DIRETORIA;Código da Diretoria de Ensino;Numérico inteiro
+CD_ESCOLA;Código da escola;Numérico inteiro
+NR_CLUSTER;Número Cluster;Numérico inteiro
+NR_CICLO;Número Ciclo;Numérico inteiro
+CD_GRUPO_CLUSTER;Código Grupo Cluster;Numérico inteiro
+DT_ANO_LETIVO;Data Ano Letivo ;Numérico inteiro
