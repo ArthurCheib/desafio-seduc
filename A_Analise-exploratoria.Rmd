@@ -467,6 +467,8 @@ base_matriculas %>%
 
 ### 2.10 - Base 10: dependências físicas
 
+Verificação mínima das variáveis encontradas e seleção de algumas para a análise
+
 ```{r}
 ## Base com as notas por escolas do SARESP por escola - 2011
 base_dependencias_fisicas <- data.table::fread(file = here(... = str_c("03-Dados/", bases_desafio[29])),
