@@ -1,0 +1,243 @@
+---
+title: "B_Analise-01"
+author: "Arthur Cheib"
+date: "08/04/2020"
+output: html_document
+---
+
+```{r include=FALSE}
+### Pacotes utilizados
+library(tidyverse)
+library(here)
+library(data.table)
+library(janitor)
+library(corrplot)
+library(gmodels)
+
+### Bases a serem inspecionadas
+bases_desafio <- list.files(here(... = "03-Dados/"), pattern = ".csv")
+load(here("03-Dados/35_base_segmentos_escolas.RData"))
+
+```
+
+## Análise 00
+
+Como o principal fator da análise requisitada pela SEDUC é o desempenho dos alunos no SARESP, realizaremos um segmentação das escolas em 3 grandes grupos.
+
+- Primeiro grupo corresponde aos 25% de escolas da base da pirâmide de aprendizagem
+- Segundo grupo corresponde aos 50% de escolas que se encontram no corpo da pirâmide de aprendizagem
+- O terceiro grupo corresponde aos 25% de escolas do topo da pirâmidade de aprendizagem
+
+Os grupos foram estabelecidos de acordo com a seguinte regra:
+
+1. Tirou-se a média simples no SARESP, de cada disciplina por etapa, para o Estado de São Paulo.
+2. Em seguida, filtrou-se todas as escolas que, em todas as etapas e em todas as disciplinas, teve um desempenho abaixo da média estadual. Esse grupo foi nomeado como a "base da pirâmide de aprendizagem".
+3. Em seguida, filtrou-se somente as escolas que, em algumas etapas e em algumas disciplinas, hora obteve um desempenho abaixo da média estadual e hora acima da mesma. Esse grupo foi nomeado como o "corpo da pirâmide de aprendizagem".
+4. Por fim, filtrou-se todas as escolas que, em todas as etapas e em todas as disciplinas, teve um desempenho acima da média estadual. Esse grupo foi nomeado como o "topo da pirâmide de aprendizagem".
+
+Ao segmentar assim as escolas, dividindo-as por desempenho no SARESP em relação à media estadual, descobrimos os valores percentuais 25-50-25, para cada segmento
+
+```{r}
+
+## Base com as notas por escolas do SARESP por escola - 2011
+base_saresp_escolas_sp <- data.table::fread(file = here(... = str_c("03-Dados/", bases_desafio[9])),
+                  sep = ";",
+                  encoding = "UTF-8") %>% 
+  as_tibble() %>% 
+  mutate(medprof = round(as.numeric(str_replace(medprof, pattern = "\\,", replacement = ".")), digits = 1))
+
+### Obtendo o valor médio por etapa-disciplina do Estado
+base_proficiencia_estado <- base_saresp_escolas_sp %>% 
+  group_by(SERIE_ANO, ds_comp) %>% 
+  summarize(MEDIA_SP = round(mean(medprof), digits = 1)) %>% 
+  ungroup()
+
+### Obtendo o valor médio por etapa-disciplina das escolas de SP
+viz_proficiencia_estado <- base_saresp_escolas_sp %>% 
+  group_by(CODESC, SERIE_ANO, ds_comp) %>% 
+  summarize(MEDIA_PROF = round(mean(medprof), digits = 1)) %>% 
+  ggplot(aes(x = MEDIA_PROF)) +
+  geom_histogram(binwidth = 0.25) +
+  facet_wrap(~ds_comp)
+
+
+### Segmentando as escolas de acordo com seu desempenho médio - por etapa-disciplina
+
+### Número de combinações possíveis - por escola - de etapas e disciplinas
+pares_etapas_disciplinas_colegios <- base_saresp_escolas_sp %>% 
+  group_by(CODESC, SERIE_ANO, ds_comp) %>% 
+  summarize(MEDIA_PROF = round(mean(medprof), digits = 1)) %>% 
+  ungroup() %>% 
+  count(CODESC, name = "TOT_COMBINACOES")
+
+### Filtragem das escolas que tiveram desempenho no SARESP abaixo da média estadual em todos os anos para todas as disciplinas.
+bottom_escolas_saresp <- base_saresp_escolas_sp %>% 
+  group_by(CODESC, SERIE_ANO, ds_comp) %>% 
+  summarize(MEDIA_PROF = round(mean(medprof), digits = 1)) %>% 
+  left_join(base_proficiencia_estado,
+            by = c("SERIE_ANO", "ds_comp")) %>% 
+  filter(MEDIA_PROF < MEDIA_SP) %>% 
+  ungroup() %>%
+  arrange(CODESC) %>% 
+  count(CODESC) %>% 
+  left_join(pares_etapas_disciplinas_colegios,
+            by = "CODESC") %>% 
+  filter(TOT_COMBINACOES == n) %>% 
+  pull(CODESC)
+
+### Filtragem das escolas que tiveram desempenho no SARESP acima da média estadual em todos os anos para todas as disciplinas.
+top_escolas_saresp <- base_saresp_escolas_sp %>% 
+  group_by(CODESC, SERIE_ANO, ds_comp) %>% 
+  summarize(MEDIA_PROF = round(mean(medprof), digits = 1)) %>% 
+  left_join(base_proficiencia_estado,
+            by = c("SERIE_ANO", "ds_comp")) %>% 
+  filter(MEDIA_PROF > MEDIA_SP) %>% 
+  ungroup() %>%
+  arrange(CODESC) %>% 
+  count(CODESC) %>% 
+  left_join(pares_etapas_disciplinas_colegios,
+            by = "CODESC") %>% 
+  filter(TOT_COMBINACOES == n) %>% 
+  pull(CODESC)
+
+### Filtragem das escolas tiveram desempenho no SARESP as vezes melhor e outras pior do que a média estadual.
+middle_escolas_saresp <- c(base_saresp_escolas_sp %>% 
+  pull(CODESC) %>% 
+  unique())[!c(base_saresp_escolas_sp %>% 
+  pull(CODESC) %>% 
+  unique()) %in% c(bottom_escolas_saresp,
+                   top_escolas_saresp)]
+
+### Segmentação do grupo das Escolas:
+base_segmentos_escolares <- tibble(CODESC = c(bottom_escolas_saresp, middle_escolas_saresp, top_escolas_saresp)) %>% 
+  mutate(SEGMENTO = case_when(CODESC %in% bottom_escolas_saresp ~ "Base da Pirâmide",
+                              CODESC %in% middle_escolas_saresp ~ "Corpo da Pirâmide",
+                              TRUE ~ "Topo da Pirâmidade")) %>% 
+  arrange(CODESC)
+
+#save(... = base_segmentos_escolares, file = "03-Dados/35_base_segmentos_escolas.RData")
+
+```
+
+
+## Análise 01
+
+A primeira análise se dedicará a correlacionar o quantitativo de ausência de servidores, bem como pool de justificativas dados pelos mesmos, com o desempenho geral no saresp - por escola.
+
+Em primeiro lugar, importa saber, para cada escola do Estado, o principal motivo dado pelos servidores para se ausentarem.
+
+```{r}
+## Base das ausências de Abril/19
+base_ausencias_abril <- data.table::fread(file = here(... = str_c("03-Dados/", bases_desafio[4])),
+                  sep = ";",
+                  encoding = "UTF-8") %>% 
+  as_tibble()
+
+## Base das ausências de Novembro/19
+base_ausencias_novembro <- data.table::fread(file = here(... = str_c("03-Dados/", bases_desafio[5])),
+                  sep = ";",
+                  encoding = "UTF-8") %>% 
+  as_tibble()
+
+# ### Criando o grupo limitante para análise: 98% dos dados de faltas em Abril refere-se a apenas cinco classes de profissional
+# cargos_infrequentes <- base_ausencias_abril %>% 
+#   tabyl(NOME_CARGO_EXERC) %>% 
+#   adorn_pct_formatting() %>% 
+#   arrange(desc(n)) %>% 
+#   head(5) %>% 
+#   pull(NOME_CARGO_EXERC)
+
+
+### Criando a dataframe de lookup entre os códigos de unidade de exercício e código de escola
+lookup_uniexecr_escola <- base_ausencias_abril %>% 
+  count(UA_EXERC, CIE_ESCOLA) %>% 
+  select(-n) %>% 
+  arrange(CIE_ESCOLA) %>% 
+  filter(CIE_ESCOLA!= 0)
+
+### Tratando a base que servirá de fundamento para as análises subsequentes - somatório dos meses de Abril e Novembro:
+base_perc_ausencias_abril <- base_ausencias_abril %>% 
+  select(-RG, -DI, -CPF, -NOME_SERVIDOR, -CIE_ESCOLA, -id_interno, -CARGO_EXERC, -TOTAL_DIAS_MES, -TOT_DIAS_AUSENCIAS) %>%
+  group_by(UA_EXERC) %>% 
+  summarize_if(is.numeric, sum, na.rm = TRUE) %>% 
+  arrange(UA_EXERC) %>% 
+  gather(key = "TP_FALTA", value = "FALTAS_ABRIL", -UA_EXERC) %>%
+  arrange(UA_EXERC) %>% 
+  filter(FALTAS_ABRIL != 0) %>% 
+  ungroup()
+
+base_perc_ausencias_novembro <- base_ausencias_novembro %>% 
+  select(-COD_MUN_E, -RG, -DI, -CPF,-RS, -PV, -NOME_SERVIDOR, -CARGO_E, -id_interno) %>%
+  group_by(UA_E) %>% 
+  summarize_if(is.numeric, sum, na.rm = TRUE) %>% 
+  arrange(UA_E) %>% 
+  gather(key = "TP_FALTA", value = "FALTAS_NOV", -UA_E) %>%
+  arrange(UA_E) %>% 
+  filter(FALTAS_NOV != 0) %>% 
+  ungroup()
+
+colnames(base_perc_ausencias_novembro)[1] <- "UA_EXERC"
+
+### Unificando as bases de Abril e Novembro
+base_perc_ausencias_2019 <- base_perc_ausencias_abril %>%  
+  left_join(base_perc_ausencias_novembro,
+            by = c("UA_EXERC", "TP_FALTA"))
+
+base_perc_ausencias_2019[is.na(base_perc_ausencias_2019)] <- 0
+
+base_ausencias_2019 <- base_perc_ausencias_2019 %>% 
+  mutate(FALTAS = (FALTAS_ABRIL + FALTAS_NOV)) %>% 
+  select(-FALTAS_ABRIL, -FALTAS_NOV) %>% 
+  group_by(UA_EXERC) %>% 
+  mutate(TOTAL_FALTAS = sum(FALTAS)) %>% 
+  ungroup() %>% 
+  mutate(PERC_AUSENCIA = round(FALTAS/TOTAL_FALTAS*100, digits = 1)) %>% 
+  arrange(UA_EXERC, desc(PERC_AUSENCIA)) %>% 
+  filter(PERC_AUSENCIA != 0) %>% 
+  group_by(UA_EXERC) %>% 
+  slice(1) %>% 
+  ungroup() %>% 
+  left_join(lookup_uniexecr_escola,
+            by = "UA_EXERC") %>% 
+  arrange(CIE_ESCOLA) %>% 
+  filter(!is.na(CIE_ESCOLA)) %>% 
+  select(CIE_ESCOLA, TP_FALTA, FALTAS, TOTAL_FALTAS, PERC_AUSENCIA)
+
+
+#### Juntando as bases e verificando os principais motivos de ausência para 2 meses de 2019
+base_ausencias_2019 %>% 
+  tabyl(TP_FALTA) %>% 
+  adorn_pct_formatting() %>% 
+  arrange(desc(n)) %>% 
+  as_tibble() %>% 
+  mutate(TP_FALTA = map_chr(TP_FALTA, ~str_split(., pattern = "TT_DIAS_")[[1]][2]))
+
+```
+
+Em seguida, verificamos se há alguma relação entre algum tipo específico de falta e os segmentos escolares pré-definidos ao início da análise.
+
+```{r}
+### Juntando as bases de ausência de servidores e a de segmentos escolares
+TESTE <- base_ausencias_2019 %>% 
+  left_join(base_segmentos_escolares,
+            by = c("CIE_ESCOLA" = "CODESC")) %>% 
+  filter(!is.na(SEGMENTO)) %>% 
+  arrange(CIE_ESCOLA) %>% 
+  filter(SEGMENTO != "Corpo da Pirâmide")
+
+### CrossTable revela que há igualdade em praticamente tudo nos números - apenas 4 categorias que não
+#### Em primeiro lugar as licenças que predominam nas de piores desempenho estão as faltas justificadas e as nao justificadas.
+CrossTable(x = TESTE$TP_FALTA,
+           y = TESTE$SEGMENTO,
+           digits = 2, prop.r = T, prop.t = F)
+
+
+### Registro das escolas que não foram encontradas por não apresentarem ao menos um resultado no saresp até 2018
+base_perc_ausencias %>% 
+  left_join(base_segmentos_escolares,
+            by = c("CIE_ESCOLA" = "CODESC")) %>% 
+  filter(is.na(SEGMENTO))
+
+```
+
+Iniciaremos agora a verificação de correlação entre a rotatividade dos diretores e professores escolares e o desempenho das escolas por segmento escolar definido pela análise.
