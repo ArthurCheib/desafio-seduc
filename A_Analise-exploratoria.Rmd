@@ -316,6 +316,8 @@ base_atribuicao <- data.table::fread(file = here(... = str_c("03-Dados/", bases_
 
 base_atribuicao
 
+base_atribuicao_total <- 
+
 ```
 
 ### 2.6 - Base 07: servidores ativos
@@ -418,7 +420,7 @@ base_formacao_servidores %>%
   arrange(CIE_ESCOLA, CPF) %>% 
   filter(!is.na(FORMACAO) & CIE_ESCOLA != 0) %>% 
   mutate(FORMACAO = str_trim(string = FORMACAO, side = "both"),
-         QT_FORMACOES = 1) %>% 
+         QT_FORMACOES = 1) %>%
   filter(NMCARGO_E %in% carreiras_populosas) %>% 
   select(-NMCARGO_E) %>% 
   group_by(CIE_ESCOLA, FORMACAO) %>% 
@@ -480,4 +482,7 @@ base_dependencias_fisicas %>%
   select(CODESC, TOT_SALAS_AULA, BIBLIOTECA, SALA_LEITURA, TOT_QUADRA)
 
 ```
+
+
+
 
