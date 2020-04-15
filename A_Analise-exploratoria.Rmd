@@ -5,6 +5,8 @@ date: "02/04/2020"
 output: html_document
 ---
 
+## 0. Infraestrura
+
 ```{r include=FALSE}
 ### Pacotes utilizados
 library(tidyverse)
@@ -20,16 +22,16 @@ bases_desafio <- list.files(here(... = "03-Dados/"), pattern = ".csv")
 
 ## 1. Análise Exploratória de Dados (AED) - Objetivo
 
-A análise exploratória de dados que se realizará em seguida tem por objetivo explorar, pela primeira vez, os dados do desafio. Essa exploração de dados, por sua vez, ocorrerá através de **visualizações** e **estatísticas sumarizadas**. Pretende-se com a AED verificar, uma a uma, qual o comportamento das variáveis disponibilizadas para o desafio, bem como algumas de suas possíveis limitações.
+A análise exploratória dos dados do desafio foi realizada através de **visualizações** e **estatísticas sumarizadas**. Pretendeu-se com esta AED verificar, uma a uma, qual o comportamento das variáveis disponibilizadas para o desafio, bem como algumas de suas possíveis limitações.
 
 ## 2. Análise univariada
 
+Nessa primeira parte realizou-se a análise das principais variáveis dos diferentes conjuntos de dados isoladamente, a fim de melhor se descobrir o comportamento das mesmas.
+
 ### 2.1 - Base 01: histórico de diretores, vice-diretores e professores
 
-São 3 bases ao todo e pra cada uma delas algumas perguntas serão realizadas:
-
 ```{r include=FALSE}
-### Histórico de professores
+### Histórico de professores-coordenadores
 base_professores <- data.table::fread(file = here(... = str_c("03-Dados/", bases_desafio[1])),
                   sep = ";",
                   encoding = "UTF-8") %>% 
@@ -52,20 +54,17 @@ base_vice_diretores <- data.table::fread(file = here(... = str_c("03-Dados/", ba
 
 ```
 
-#### 2.1.1 - O que podemos observar da base de professores e as principais perguntas que ficam:
+#### 2.1.1 - Análise da base de professores-coordenadores
 
-1) O total de professores aparece muito baixo. Qual o motivo?
 ```{r echo=FALSE}
-## Total de professores
+## Total de professores-coordenadores
 base_professores %>% 
   pull(NR_CPF) %>% 
   n_distinct(.)
 ```
 
-2) O que seria cada código de situação da escola?
+1) O que seria cada código de situação da escola?
 
-(1 == ativa, provavelmente;
-Outros valores = paralisadas? inativas?)
 ```{r echo=FALSE}
 ## Código de situação da escola
 base_professores %>%
@@ -74,7 +73,7 @@ base_professores %>%
 
 ```
 
-#### 2.1.2 - O que podemos observar da base de vice-diretores e as principais perguntas que ficam:
+#### 2.1.2 - Análise da base de vice-diretores
 
 Não há nenhum questionamento, por hora, em relação as variáveis, pois não há dados faltando ou valores estranhos. O único ponto de erro é que para um conjunto de 10 linhas as observações avançaram uma variável a frente, deixando a primeira coluna vazia de dados.
 
@@ -154,7 +153,7 @@ base_vice_diretores %>%
   
 ```
 
-#### 2.1.2 - O que podemos observar da base de diretores e as principais perguntas que ficam:
+#### 2.1.2 - Análise da base de diretores
 
 Inicialmente filtra-se apenas as escolas que possuíram uma diretoria entre 2014-2019, ou seja, 96,5% dos casos. Logo 3,5% dessas escolas, muito provavelmente, foram criadas a partir de 2015, visto que uma escola não deve funcionar sem diretoria e foram retiradas pontualmente para essa análise.
 
@@ -220,6 +219,12 @@ base_diretores %>%
 São três conjunto de dados disponibilizados para essa base.
 
 ```{r}
+## Base das ausências de Novembro/2018
+base_ausencias_novembro_18 <- data.table::fread(file = here(... = str_c("03-Dados/", bases_desafio[5])),
+                  sep = ";",
+                  encoding = "UTF-8") %>% 
+  as_tibble()
+
 ## Base das ausências de Abril/19
 base_ausencias_abril <- data.table::fread(file = here(... = str_c("03-Dados/", bases_desafio[4])),
                   sep = ";",
@@ -227,13 +232,13 @@ base_ausencias_abril <- data.table::fread(file = here(... = str_c("03-Dados/", b
   as_tibble()
 
 ## Base das ausências de Novembro/19
-base_ausencias_novembro <- data.table::fread(file = here(... = str_c("03-Dados/", bases_desafio[5])),
+base_ausencias_novembro <- data.table::fread(file = here(... = str_c("03-Dados/", bases_desafio[6])),
                   sep = ";",
                   encoding = "UTF-8") %>% 
   as_tibble()
 ```
 
-Este são os principais motivos para ausência de servidores por escola
+A análise dos dados dedicou-se a perceber a carreira com maior frequência na base e os principais motivos elencados pelos profissionais como justificativas para a ausência laboral.
 
 ```{r}
 ### Criando o grupo limitante para análise: 98% dos dados de faltas em Abril refere-se a apenas cinco classes
@@ -296,13 +301,27 @@ base_idesp_escolas_sp %>%
 ### 2.4 - Base 04: SARESP por escola
 
 ```{r}
-## Base com as notas por escolas do SARESP por escola - 2011
+## Base com as notas por escolas do SARESP por escola - 2012
 base_saresp_escolas_sp <- data.table::fread(file = here(... = str_c("03-Dados/", bases_desafio[9])),
                   sep = ";",
                   encoding = "UTF-8") %>% 
-  as_tibble()
+  as_tibble() %>% 
+  filter(medprof != "") %>% 
+  arrange(CODESC) %>% 
+  mutate(medprof = as.numeric(str_replace(string = medprof, pattern = "\\,", replacement = ".")))
 
-base_saresp_escolas_sp
+base_saresp_escolas_sp %>% 
+  group_by(SERIE_ANO, ds_comp) %>% 
+  summarize(MEDIA_SARESP = mean(medprof, na.rm = T)) %>% 
+  ungroup()
+
+base_saresp_escolas_sp %>% 
+  group_by(SERIE_ANO, ds_comp) %>% 
+  filter(medprof == min(medprof))
+
+base_saresp_escolas_sp %>% 
+  group_by(SERIE_ANO, ds_comp) %>% 
+  filter(medprof == max(medprof))
 
 ```
 
@@ -316,13 +335,9 @@ base_atribuicao <- data.table::fread(file = here(... = str_c("03-Dados/", bases_
 
 base_atribuicao
 
-base_atribuicao_total <- 
-
 ```
 
-### 2.6 - Base 07: servidores ativos
-
-### 2.7 - Base 07: formação dos servidores
+### 2.6 - Base 06: formação dos servidores
 
 ```{r}
 ## Base com as notas por escolas do SARESP por escola - 2011
@@ -434,7 +449,7 @@ base_formacao_servidores %>%
 
 ```
 
-### 2.8 - Base 8: servidores ativos
+### 2.7 - Base 7: servidores ativos
 
 ```{r}
 ## Base os servidores ativos em Novembro de 2019
@@ -446,7 +461,7 @@ base_servidores <- data.table::fread(file = here(... = str_c("03-Dados/", bases_
 
 ```
 
-### 2.9 - Base 9: histórico matrículas por turmas
+### 2.8 - Base 8: histórico matrículas por turmas
 
 ```{r}
 ## Base contendo o histórico de matrículas por turma (2014-2019)
@@ -467,7 +482,7 @@ base_matriculas %>%
 
 ```
 
-### 2.10 - Base 10: dependências físicas
+### 2.9 - Base 10: dependências físicas
 
 Verificação mínima das variáveis encontradas e seleção de algumas para a análise
 
@@ -479,10 +494,8 @@ base_dependencias_fisicas <- data.table::fread(file = here(... = str_c("03-Dados
   as_tibble()
 
 base_dependencias_fisicas %>%
-  select(CODESC, TOT_SALAS_AULA, BIBLIOTECA, SALA_LEITURA, TOT_QUADRA)
+  select(CODESC, TOT_SALAS_AULA, BIBLIOTECA, SALA_LEITURA, TOT_QUADRA) %>% 
+  arrange(CODESC) 
+  
 
 ```
-
-
-
-
