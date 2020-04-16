@@ -14,9 +14,12 @@ library(here)
 library(data.table)
 library(janitor)
 library(corrplot)
+library(gmodels)
 
 ### Bases a serem inspecionadas
 bases_desafio <- list.files(here(... = "03-Dados/"), pattern = ".csv")
+
+
 
 ```
 
@@ -282,19 +285,20 @@ São quatro bases, sendo que uma delas trata dos dados sumarizados por escola. T
 
 ```{r}
 ## Base com as notas por escolas do idesp - TODOS OS ANOS
-base_idesp_escolas_sp <- data.table::fread(file = here(... = str_c("03-Dados/", bases_desafio[7])),
+base_idesp_escolas_sp_18 <- data.table::fread(file = here(... = str_c("03-Dados/", bases_desafio[7])),
                   sep = ";",
                   encoding = "UTF-8") %>% 
   as_tibble()
 
-base_idesp_escolas_sp %>% 
-  filter(!is.na(ENSINO_MEDIO)) %>% 
-  mutate(RANK_IDESP_EM = cut(ENSINO_MEDIO,
-                      breaks = quantile(base_idesp_escolas_sp$ENSINO_MEDIO, na.rm = T) %>%
-                        as_tibble() %>%
-                        pull(value),
-                      labels = c(str_c("Grupo ", 1:4)))) %>%
-  select(CODIGO_CIE, ENSINO_MEDIO, RANK_IDESP_EM)
+base_idesp_analise <- base_idesp_escolas_sp_18 %>% 
+  select(-ANO_LETIVO, -CODIGO_INEP, -CODIGO_DIRETORIA, -NOME_DIRETORIA, -NOME_ESCOLA, -NOME_MUNICIPIO) %>% 
+  gather(key = "ETAPAS", value = "NOTA_IDESP", -CODIGO_CIE) %>% 
+  arrange(CODIGO_CIE) %>% 
+  mutate(ETAPAS = factor(ETAPAS, levels = c("ANOS_INICIAIS", "ANOS_FINAIS", "ENSINO_MEDIO")))
+
+base_idesp_analise %>% 
+  group_by(ETAPAS) %>% 
+  summarize(MEDIA_IDESP = mean(NOTA_IDESP, na.rm = TRUE))
 
 ```
 
