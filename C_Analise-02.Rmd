@@ -1,0 +1,342 @@
+---
+title: "C_Analise-02"
+author: "Arthur Cheib"
+date: "08/04/2020"
+output: html_document
+---
+
+```{r include=FALSE}
+### Pacotes utilizados
+library(tidyverse)
+library(here)
+library(data.table)
+library(janitor)
+library(corrplot)
+
+### Bases a serem inspecionadas
+bases_desafio <- list.files(here(... = "03-Dados/"), pattern = ".csv")
+
+### Base de segmentos escolares
+load(file = here("03-Dados/35_base_segmentos_escolas.RData"))
+
+### Histórico de diretores
+base_diretores <- data.table::fread(file = here(... = str_c("03-Dados/", bases_desafio[2])),
+                  sep = ";",
+                  encoding = "UTF-8") %>% 
+  as_tibble() %>%
+  arrange(CD_ESCOLA)
+
+### Histórico de vice-diretores
+base_vice_diretores <- data.table::fread(file = here(... = str_c("03-Dados/", bases_desafio[3])),
+                  sep = ";",
+                  encoding = "UTF-8") %>% 
+  as_tibble() %>%
+  arrange(CD_ESCOLA)
+
+## Base com as notas por escolas do SARESP por escola - 2015 a 2018
+base_saresp_escolas_sp_14_18 <- data.table::fread(file = here(... = str_c("03-Dados/", bases_desafio[12])),
+                  sep = ";",
+                  encoding = "UTF-8") %>% 
+  as_tibble() %>% 
+  mutate(ANO = 2015) %>% 
+  bind_rows(data.table::fread(file = here(... = str_c("03-Dados/", bases_desafio[13])),
+                  sep = ";",
+                  encoding = "UTF-8") %>% 
+    as_tibble() %>% 
+    mutate(ANO = 2016)) %>%  
+  bind_rows(data.table::fread(file = here(... = str_c("03-Dados/", bases_desafio[14])),
+                  sep = ";",
+                  encoding = "UTF-8") %>% 
+    as_tibble() %>% 
+    mutate(ANO = 2017)) %>%
+  bind_rows(data.table::fread(file = here(... = str_c("03-Dados/", bases_desafio[15])),
+                  sep = ";",
+                  encoding = "Latin-1") %>% 
+    as_tibble() %>% 
+    mutate(ANO = 2018)) %>% 
+  filter(medprof != "") %>% 
+  arrange(CODESC) %>% 
+  mutate(medprof = as.numeric(str_replace(string = medprof, pattern = "\\,", replacement = "."))) %>% 
+  group_by(CODESC, ANO, SERIE_ANO, ds_comp) %>% 
+  summarize(MEDIA_SARESP = mean(medprof, na.rm = TRUE))
+
+
+
+```
+
+## Análise 02
+
+Na segunda análise nos dedicamos a investigar a existência, ou não, de alguma correlação entre a rotatividade dos diretores e o desempenho geral no saresp - por escola (de acordo com os segmentos elaborados).
+
+```{r}
+
+### Como descoberto na Análise Exploratória de Dados, a maior parte das escolas (99,9%) contou com uma diretoria nos últimos 6 anos, logo, análise possui dados relevantes.
+
+### Criando o vetor que contém o conjunto das escolas que possuíram diretoria durante os 6 anos dos dados (2014-2019)
+escolas_com_diretoria_6anos <- base_diretores %>% 
+  select(CD_ESCOLA, NR_CPF, `2014`:`2019`) %>%
+  gather(key = "ANO", value = "DIRETORIA", -NR_CPF, -CD_ESCOLA) %>%
+  mutate(DIRETORIA = as.numeric(as.character(fct_recode(DIRETORIA, "0" = "NAO", "1" = "SIM")))) %>%
+  filter(DIRETORIA == 1) %>% 
+  arrange(CD_ESCOLA, ANO) %>% 
+  group_by(CD_ESCOLA) %>% 
+  summarize(ANOS_COM_D = n_distinct(ANO)) %>% 
+  arrange(ANOS_COM_D) %>% 
+  filter(ANOS_COM_D == 6) %>% 
+  pull(CD_ESCOLA)
+  
+
+### Segmentação: dos diretores da escola o que permaneceu por mais tempo, por quanto anos foi?
+base_anos_diretoria <- base_diretores %>% 
+  select(CD_ESCOLA, NR_CPF, `2014`:`2019`) %>%
+  gather(key = "ANO", value = "DIRETORIA", -NR_CPF, -CD_ESCOLA) %>%
+  mutate(DIRETORIA = as.numeric(as.character(fct_recode(DIRETORIA, "0" = "NAO", "1" = "SIM")))) %>%
+  filter(DIRETORIA == 1) %>% 
+  arrange(CD_ESCOLA, ANO) %>% 
+  group_by(CD_ESCOLA, NR_CPF) %>% 
+  summarize(QT_ANOS_D = n_distinct(ANO)) %>% 
+  ungroup() %>% 
+  arrange(CD_ESCOLA, desc(QT_ANOS_D)) %>% 
+  group_by(CD_ESCOLA) %>% 
+  summarize(COMBINADO_ANDRE = str_c(QT_ANOS_D, collapse = "/")) %>% 
+  ungroup() %>% 
+  separate(col = COMBINADO_ANDRE, sep = "/", into = c(str_c("dir_", c(1:20)))) %>%
+  filter(CD_ESCOLA %in% escolas_com_diretoria_6anos) %>% 
+  select(CD_ESCOLA, dir_1)
+
+### Quantidade máxima de anos com o mesmo diretor - por escola:
+base_anos_diretoria %>% 
+  tabyl(dir_1) %>% 
+  janitor::adorn_pct_formatting() %>% 
+  setNames(c("ANOS DIRETOR", "TOTAL DE ESCOLAS", "PERCENTUAL DE ESCOLAS"))
+
+### Cruzamento das bases de máximo-anos com ao menos um diretor e segmentos escolares
+base_cruzamento_02 <- base_anos_diretoria %>% 
+  setNames(c("CODESC", "ANOS_MESMO_DIRETOR")) %>% 
+  left_join(base_segmentos_escolares,
+            by = "CODESC") %>% 
+  filter(!is.na(SEGMENTO))
+
+## Cruzamento entre os anos com um mesmo diretor e os segmentos escolares
+CrossTable(x = base_cruzamento_02$ANOS_MESMO_DIRETOR,
+           y = base_cruzamento_02$SEGMENTO,
+           digits = 2, prop.r = T, prop.t = F)
+
+### Média de tempo com um mesmo diretor para os diversos segmentos escolares
+base_cruzamento_02 %>% 
+  group_by(SEGMENTO) %>%
+  summarize(X = mean(as.numeric(ANOS_MESMO_DIRETOR), na.rm = T))
+
+```
+
+Criando a base que será considerada como a equipe da alta direção de cada escola
+
+```{r}
+
+### Apenas escolas que tiveram ao menos um vice-diretor ao longo dos 6 anos
+escolas_com_vd_6anos <- base_vice_diretores %>% 
+  select(CD_ESCOLA, NR_CPF, `2014`:`2019`) %>%
+  filter(`2014` %in% c("NAO", "SIM")) %>% 
+  gather(key = "ANO", value = "VICE_DIRETORIA", -NR_CPF, -CD_ESCOLA) %>%
+  mutate(VICE_DIRETORIA = as.numeric(as.character(fct_recode(VICE_DIRETORIA, "0" = "NAO", "1" = "SIM")))) %>% 
+  filter(VICE_DIRETORIA == 1) %>% 
+  arrange(CD_ESCOLA, ANO) %>% 
+  group_by(CD_ESCOLA) %>% 
+  summarize(ANOS_COM_VD = n_distinct(ANO)) %>% 
+  arrange(ANOS_COM_VD) %>% 
+  filter(ANOS_COM_VD == 6) %>% 
+  pull(CD_ESCOLA)
+
+### Apenas escolas que tiveram ao menos um diretor ao longo dos 6 anos
+escolas_com_diretoria_6anos
+
+### Combinação exclusiva, somente escolas que contaram com direção e vice-direção nos 6 anos
+escolas_com_d_e_vd_6anos <- c(escolas_com_diretoria_6anos[c(escolas_com_diretoria_6anos %in% escolas_com_vd_6anos)])
+
+```
+
+
+```{r}
+## Criando a data frame que contém o a equipe da vice-diretoria de cada escola
+base_equipe_vice_diretores <- base_vice_diretores %>% 
+  filter(CD_ESCOLA %in% escolas_com_d_e_vd_6anos) %>% 
+  select(CD_ESCOLA, NR_CPF, `2014`:`2019`) %>%
+  filter(`2014` %in% c("NAO", "SIM")) %>% 
+  gather(key = "ANO", value = "VICE_DIRETORIA", -NR_CPF, -CD_ESCOLA) %>%
+  mutate(VICE_DIRETORIA = as.numeric(as.character(fct_recode(VICE_DIRETORIA, "0" = "NAO", "1" = "SIM")))) %>% 
+  filter(VICE_DIRETORIA == 1) %>%
+  group_by(CD_ESCOLA, ANO) %>% 
+  summarize(EQUIPE_VD = str_c(NR_CPF, collapse = "-")) %>% 
+  ungroup()
+
+## Criando a data frame que contém o a equipe da diretoria de cada escola
+base_equipe_diretores <- base_diretores %>% 
+  filter(CD_ESCOLA %in% escolas_com_d_e_vd_6anos) %>% 
+  select(CD_ESCOLA, NR_CPF, `2014`:`2019`) %>%
+  gather(key = "ANO", value = "DIRETORIA", -NR_CPF, -CD_ESCOLA) %>%
+  mutate(DIRETORIA = as.numeric(as.character(fct_recode(DIRETORIA, "0" = "NAO", "1" = "SIM")))) %>% 
+  filter(DIRETORIA == 1) %>%
+  group_by(CD_ESCOLA, ANO) %>% 
+  summarize(EQUIPE_D = str_c(NR_CPF, collapse = "-")) %>% 
+  ungroup()
+
+## Unificando as bases e montando a equipe única do corpo diretivo da escola
+source(file = here("Functions.R"))
+
+base_equipe_diretiva <- base_equipe_diretores %>% 
+  left_join(base_equipe_vice_diretores,
+            by = c("CD_ESCOLA", "ANO")) %>% 
+  mutate(EQUIPE_GERAL = map2_chr(.x = EQUIPE_D, .y = EQUIPE_VD, .f = juntar_cols)) %>%
+  select(CD_ESCOLA, ANO, EQUIPE_GERAL) %>%
+  mutate(ANO = as.numeric(ANO))
+
+## Calculando a rotativade ano a ano do corpo diretivo
+for (i in seq_along(1:nrow(base_equipe_diretiva))) {
+  
+  esc1 <- base_equipe_diretiva$CD_ESCOLA[i]
+  esc2 <- base_equipe_diretiva$CD_ESCOLA[i+1]
+  
+  if (esc1 == esc2) {
+  
+  equipe_ano_based <- base_equipe_diretiva$EQUIPE_GERAL[i]
+  
+  equipe_ano_calculo <- base_equipe_diretiva$EQUIPE_GERAL[i+1]
+  
+  valor <- round(calc_turnover(equipe_ano_base = equipe_ano_based, equipe_ano_calc = equipe_ano_calculo), digits = 2)
+  
+  base_equipe_diretiva[i+1, 4] <- valor
+  
+  } else {
+    
+  valor <- NA
+  
+  base_equipe_diretiva[i+1, 4] <- valor
+    
+  }
+  
+}
+
+colnames(base_equipe_diretiva)[4] <- "PERC_ROTATIVIDADE"
+
+### Análise: rotativade da equipe diretiva vs. segmentos escolares
+teste <- base_equipe_diretiva %>% 
+  filter(!is.na(PERC_ROTATIVIDADE)) %>% 
+  group_by(CD_ESCOLA) %>% 
+  summarize(AVG_ROTATIVADE_ANUAL = round(mean(PERC_ROTATIVIDADE*100), digits = 1)) %>% 
+  left_join(base_segmentos_escolares,
+            by = c("CD_ESCOLA" = "CODESC")) %>% 
+  filter(!is.na(SEGMENTO)) %>% 
+  group_by(SEGMENTO) %>% 
+  summarize(AVG_ROTATIVADE_ANUAL = mean(AVG_ROTATIVADE_ANUAL))
+
+
+
+
+```
+
+```{r}
+### Junção das bases: (I) cálculo de turnover da equipe diretiva por ano por escola x (II) saresp por ano por escola
+base_equipe_x_saresp <- base_equipe_diretiva %>%
+  filter(!is.na(PERC_ROTATIVIDADE)) %>% 
+  left_join(base_saresp_escolas_sp_14_18,
+            by = c("CD_ESCOLA" = "CODESC", "ANO")) %>%
+  filter(!is.na(ds_comp))
+
+
+#### Cálculo de avanço médio no SARESP
+vetor_avanco_saresp <- base_equipe_diretiva %>% 
+  filter(!is.na(PERC_ROTATIVIDADE)) %>% 
+  group_by(CD_ESCOLA) %>% 
+  summarize(PERC_ROTATIVIDADE_ANUAL = mean(PERC_ROTATIVIDADE)) %>% 
+  ungroup() %>% 
+  left_join(base_saresp_escolas_sp_14_18 %>%
+              ungroup() %>% 
+              group_by(CODESC, SERIE_ANO, ds_comp) %>% 
+              mutate(AVANCO_SARESP = MEDIA_SARESP[ANO == max(ANO)] - MEDIA_SARESP[ANO == min(ANO)]) %>% 
+              arrange(CODESC, ANO, ds_comp) %>% 
+              group_by(CODESC, SERIE_ANO, ds_comp) %>% 
+              slice(1) %>% 
+              ungroup() %>%
+              filter(AVANCO_SARESP != 0) %>% 
+              select(-ANO, -MEDIA_SARESP),
+            by = c("CD_ESCOLA" = "CODESC")) %>%
+  filter(!is.na(AVANCO_SARESP)) %>% 
+  pull(AVANCO_SARESP)
+
+summary(vetor_avanco_saresp)
+min_outlier <- boxplot.stats(vetor_avanco_saresp)$stats[1]
+max_outlier <- boxplot.stats(vetor_avanco_saresp)$stats[5]
+median_avanco <- boxplot.stats(vetor_avanco_saresp)$stats[3]
+
+#### Percentual de avanço no SARESP - entre 2014 e 2018
+base_saresp_escolas_sp_14_18 %>%
+              ungroup() %>% 
+              group_by(CODESC, SERIE_ANO, ds_comp) %>% 
+              mutate(AVANCO_SARESP = MEDIA_SARESP[ANO == max(ANO)] - MEDIA_SARESP[ANO == min(ANO)]) %>% 
+              arrange(CODESC, ANO, ds_comp)
+
+
+
+### Verificação do impacto do turnover médio e o SARESP médio
+base_equipe_diretiva %>% 
+  filter(!is.na(PERC_ROTATIVIDADE)) %>% 
+  group_by(CD_ESCOLA) %>% 
+  summarize(PERC_ROTATIVIDADE_ANUAL = mean(PERC_ROTATIVIDADE)) %>% 
+  ungroup() %>% 
+  left_join(base_saresp_escolas_sp_14_18 %>%
+              ungroup() %>% 
+              group_by(CODESC, SERIE_ANO, ds_comp) %>% 
+              mutate(AVANCO_SARESP = MEDIA_SARESP[ANO == max(ANO)] - MEDIA_SARESP[ANO == min(ANO)]) %>% 
+              arrange(CODESC, ANO, ds_comp) %>% 
+              group_by(CODESC, SERIE_ANO, ds_comp) %>% 
+              slice(1) %>% 
+              ungroup() %>% 
+              filter(AVANCO_SARESP != 0) %>% 
+              select(-ANO, -MEDIA_SARESP),
+            by = c("CD_ESCOLA" = "CODESC")) %>%
+  filter(!is.na(AVANCO_SARESP)) %>%
+  filter(AVANCO_SARESP >= min_outlier & AVANCO_SARESP <= max_outlier) %>% 
+  filter(AVANCO_SARESP >= median_avanco) %>% 
+  filter(ds_comp == "MATEMÁTICA") %>%
+  ggplot(aes(y = AVANCO_SARESP, x = PERC_ROTATIVIDADE_ANUAL)) +
+  geom_point(alpha = 0.85) +
+  facet_wrap(~SERIE_ANO) +
+  geom_smooth(method = "lm") +
+  theme_minimal() +
+  labs(title = "Distribuição Salarial EPPGG (remuneração bruta) - 2014 ~ 2018",
+       subtitle = "Pontos conquistados no SARESP, por escola, versus rotatividade do corpo diretivo",
+       x = "Percentual de rotativade",
+       y = "Pontos ganhos no SARESP",
+       caption = "Fonte: Dados Abertos do Estado de São Paulo | @DesafioDeDados") +
+  theme(plot.title = element_text(colour = "black", face = "bold", size = 15),
+        plot.subtitle = element_text(colour = "cornsilk4", size = 12),
+        plot.caption = element_text(colour = "cornsilk4", size = 11.5),
+        axis.text = element_text(size = 10),
+        axis.title.y = element_text(size = 12, colour = "black", face = "bold"),
+        axis.title.x = element_text(size = 12, colour = "black", face = "bold"))  
+  
+  
+
+
+
+
+
+### Verificação da correlação entre o saresp e o turnover
+base_equipe_x_saresp %>% 
+  ggplot(aes(y = MEDIA_SARESP, x = PERC_ROTATIVIDADE)) +
+  geom_point() +
+  facet_wrap(~ANO)
+
+```
+
+
+```{r}
+### Escolas que não possuem dados do SARESP para classificação:
+base_anos_diretoria %>% 
+  setNames(c("CODESC", "ANOS_MESMO_DIRETOR")) %>% 
+  left_join(base_segmentos_escolares,
+            by = "CODESC") %>% 
+  filter(is.na(SEGMENTO))
+
+```
+

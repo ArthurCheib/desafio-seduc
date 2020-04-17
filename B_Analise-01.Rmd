@@ -288,5 +288,7 @@ base_ausencia_corpo_docente %>%
   facet_grid(ETAPAS ~ NOME_DISCIPLINA) +
   geom_smooth(method = "lm")
 
+## O gráfico revela algum indício de possível correlação negativa entre o total de faltas e o desempenho no IDESP independentemente da etapa escolar (para todas, quanto maior o percentual de faltas, menor o desempenho).
+
 ```
 
