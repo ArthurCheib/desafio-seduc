@@ -171,9 +171,21 @@ base_ausencias_2019_total %>%
   select(CIE_ESCOLA, everything(.), -UA_EXERC, -FALTAS, -TOTAL_FALTAS) %>% 
   filter(!is.na(MEDIA_SARESP)) %>% 
   ggplot(aes(x = MEDIA_SARESP, y = PERC_AUSENCIA)) +
-  geom_point(aes(alpha = 0.8)) + 
+  geom_point(alpha = 0.8) + 
   facet_grid(SERIE_ANO ~ ds_comp, scales = "free_y") +
-  geom_smooth(method = "lm")
+  geom_smooth(method = "lm") +
+  theme_minimal() +
+  labs(title = "Percentual de faltas injustificadas e desempenho no SARESP - 2018",
+       subtitle = "Percentual de faltas injustificadas em relação ao total, por escola versus o desempenho no SARESP",
+       x = "Média no SARESP",
+       y = "% faltas Injustificadas em relação ao total",
+       caption = "Fonte: Dados abertos do Estado de São Paulo | @DesafioDeDados") +
+  theme(plot.title = element_text(colour = "black", face = "bold", size = 15),
+        plot.subtitle = element_text(colour = "cornsilk4", size = 12),
+        plot.caption = element_text(colour = "cornsilk4", size = 11.5),
+        axis.text = element_text(size = 10),
+        axis.title.y = element_text(size = 12, colour = "black", face = "bold"),
+        axis.title.x = element_text(size = 12, colour = "black", face = "bold"))   
 
 ```
 

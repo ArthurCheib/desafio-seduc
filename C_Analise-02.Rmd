@@ -187,8 +187,7 @@ base_equipe_diretiva <- base_equipe_diretores %>%
   left_join(base_equipe_vice_diretores,
             by = c("CD_ESCOLA", "ANO")) %>% 
   mutate(EQUIPE_GERAL = map2_chr(.x = EQUIPE_D, .y = EQUIPE_VD, .f = juntar_cols)) %>%
-  select(CD_ESCOLA, ANO, EQUIPE_GERAL) %>%
-  mutate(ANO = as.numeric(ANO))
+  select(CD_ESCOLA, ANO, EQUIPE_GERAL)
 
 ## Calculando a rotativade ano a ano do corpo diretivo
 for (i in seq_along(1:nrow(base_equipe_diretiva))) {
@@ -242,39 +241,30 @@ base_equipe_x_saresp <- base_equipe_diretiva %>%
             by = c("CD_ESCOLA" = "CODESC", "ANO")) %>%
   filter(!is.na(ds_comp))
 
-
-#### Cálculo de avanço médio no SARESP
-vetor_avanco_saresp <- base_equipe_diretiva %>% 
-  filter(!is.na(PERC_ROTATIVIDADE)) %>% 
-  group_by(CD_ESCOLA) %>% 
-  summarize(PERC_ROTATIVIDADE_ANUAL = mean(PERC_ROTATIVIDADE)) %>% 
+#### Percentual de avanço no SARESP - entre 2014 e 2018
+base_avanco_saresp_analise <- base_saresp_escolas_sp_14_18 %>%
+  ungroup() %>%
+  group_by(CODESC, SERIE_ANO, ds_comp) %>%
+  mutate(AVANCO_SARESP = MEDIA_SARESP[ANO == max(ANO)] - MEDIA_SARESP[ANO == min(ANO)]) %>%
+  arrange(CODESC, ANO, ds_comp) %>% 
+  filter(AVANCO_SARESP != 0) %>% 
+  group_by(CODESC, SERIE_ANO, ds_comp) %>%
+  slice(1) %>%
   ungroup() %>% 
-  left_join(base_saresp_escolas_sp_14_18 %>%
-              ungroup() %>% 
-              group_by(CODESC, SERIE_ANO, ds_comp) %>% 
-              mutate(AVANCO_SARESP = MEDIA_SARESP[ANO == max(ANO)] - MEDIA_SARESP[ANO == min(ANO)]) %>% 
-              arrange(CODESC, ANO, ds_comp) %>% 
-              group_by(CODESC, SERIE_ANO, ds_comp) %>% 
-              slice(1) %>% 
-              ungroup() %>%
-              filter(AVANCO_SARESP != 0) %>% 
-              select(-ANO, -MEDIA_SARESP),
-            by = c("CD_ESCOLA" = "CODESC")) %>%
-  filter(!is.na(AVANCO_SARESP)) %>% 
-  pull(AVANCO_SARESP)
+  select(-ANO) %>% 
+  mutate(PERC_AVANCO_SARESP = round((AVANCO_SARESP/MEDIA_SARESP*100), digits = 1)) %>% 
+  select(-MEDIA_SARESP, -AVANCO_SARESP)
+
+
+#### Cálculo de avanço médio percentual no SARESP
+vetor_avanco_saresp <- base_avanco_saresp_analise %>%
+  pull(PERC_AVANCO_SARESP)
+
 
 summary(vetor_avanco_saresp)
 min_outlier <- boxplot.stats(vetor_avanco_saresp)$stats[1]
 max_outlier <- boxplot.stats(vetor_avanco_saresp)$stats[5]
 median_avanco <- boxplot.stats(vetor_avanco_saresp)$stats[3]
-
-#### Percentual de avanço no SARESP - entre 2014 e 2018
-base_saresp_escolas_sp_14_18 %>%
-              ungroup() %>% 
-              group_by(CODESC, SERIE_ANO, ds_comp) %>% 
-              mutate(AVANCO_SARESP = MEDIA_SARESP[ANO == max(ANO)] - MEDIA_SARESP[ANO == min(ANO)]) %>% 
-              arrange(CODESC, ANO, ds_comp)
-
 
 
 ### Verificação do impacto do turnover médio e o SARESP médio
@@ -283,30 +273,20 @@ base_equipe_diretiva %>%
   group_by(CD_ESCOLA) %>% 
   summarize(PERC_ROTATIVIDADE_ANUAL = mean(PERC_ROTATIVIDADE)) %>% 
   ungroup() %>% 
-  left_join(base_saresp_escolas_sp_14_18 %>%
-              ungroup() %>% 
-              group_by(CODESC, SERIE_ANO, ds_comp) %>% 
-              mutate(AVANCO_SARESP = MEDIA_SARESP[ANO == max(ANO)] - MEDIA_SARESP[ANO == min(ANO)]) %>% 
-              arrange(CODESC, ANO, ds_comp) %>% 
-              group_by(CODESC, SERIE_ANO, ds_comp) %>% 
-              slice(1) %>% 
-              ungroup() %>% 
-              filter(AVANCO_SARESP != 0) %>% 
-              select(-ANO, -MEDIA_SARESP),
+  left_join(base_avanco_saresp_analise,
             by = c("CD_ESCOLA" = "CODESC")) %>%
-  filter(!is.na(AVANCO_SARESP)) %>%
-  filter(AVANCO_SARESP >= min_outlier & AVANCO_SARESP <= max_outlier) %>% 
-  filter(AVANCO_SARESP >= median_avanco) %>% 
-  filter(ds_comp == "MATEMÁTICA") %>%
-  ggplot(aes(y = AVANCO_SARESP, x = PERC_ROTATIVIDADE_ANUAL)) +
+  filter(!is.na(PERC_AVANCO_SARESP)) %>%
+  filter(PERC_AVANCO_SARESP >= min_outlier & PERC_AVANCO_SARESP <= max_outlier) %>% 
+  filter(PERC_AVANCO_SARESP >= median_avanco) %>%
+  ggplot(aes(y = PERC_AVANCO_SARESP, x = PERC_ROTATIVIDADE_ANUAL*100)) +
   geom_point(alpha = 0.85) +
-  facet_wrap(~SERIE_ANO) +
+  facet_wrap(~ds_comp) +
   geom_smooth(method = "lm") +
   theme_minimal() +
-  labs(title = "Distribuição Salarial EPPGG (remuneração bruta) - 2014 ~ 2018",
-       subtitle = "Pontos conquistados no SARESP, por escola, versus rotatividade do corpo diretivo",
-       x = "Percentual de rotativade",
-       y = "Pontos ganhos no SARESP",
+  labs(title = "Rotatividade média anual e avanço percentual no SARESP - 2014 ~ 2018",
+       subtitle = "Pontos percentuais médios ganhos no SARESP, por escola, versus rotatividade do corpo diretivo",
+       x = "Percentual de rotativade média anual",
+       y = "Aumento percentual no SARESP",
        caption = "Fonte: Dados Abertos do Estado de São Paulo | @DesafioDeDados") +
   theme(plot.title = element_text(colour = "black", face = "bold", size = 15),
         plot.subtitle = element_text(colour = "cornsilk4", size = 12),
@@ -315,11 +295,6 @@ base_equipe_diretiva %>%
         axis.title.y = element_text(size = 12, colour = "black", face = "bold"),
         axis.title.x = element_text(size = 12, colour = "black", face = "bold"))  
   
-  
-
-
-
-
 
 ### Verificação da correlação entre o saresp e o turnover
 base_equipe_x_saresp %>% 

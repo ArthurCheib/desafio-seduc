@@ -1,0 +1,127 @@
+---
+title: "D_Analise-03"
+author: "Arthur Cheib"
+date: "13/04/2020"
+output: html_document
+---
+
+```{r include=FALSE}
+### Pacotes utilizados
+library(tidyverse)
+library(here)
+library(data.table)
+library(janitor)
+library(corrplot)
+library(gmodels)
+
+### Bases a serem inspecionadas
+bases_desafio <- list.files(here(... = "03-Dados/"), pattern = ".csv")
+
+### Base de segmentos escolares
+load(file = here("03-Dados/35_base_segmentos_escolas.RData"))
+
+### Base contendo a carga horária dos professores em Novembro de 2019 (basicamente, quem deu aula ano passado)
+base_carga_horaria <- data.table::fread(file = here(... = str_c("03-Dados/", bases_desafio[25])),
+                  sep = ";",
+                  encoding = "UTF-8") %>% 
+  as_tibble()
+
+## Base com a mais alta formação dos professores
+base_formacao_servidores <- data.table::fread(file = here(... = str_c("03-Dados/", bases_desafio[21])),
+                  sep = ";",
+                  encoding = "UTF-8") %>% 
+  as_tibble()
+
+### Base com o desempenho no SARESP pelas escolas de SP
+base_saresp_escolas_sp_18 <- data.table::fread(file = here(... = str_c("03-Dados/", bases_desafio[15])),
+                  sep = ";",
+                  encoding = "Latin-1") %>% 
+  as_tibble() %>%
+  filter(medprof != "") %>% 
+  arrange(CODESC) %>% 
+  mutate(medprof = as.numeric(str_replace(string = medprof, pattern = "\\,", replacement = "."))) %>% 
+  group_by(CODESC, SERIE_ANO, ds_comp) %>% 
+  summarize(MEDIA_SARESP = mean(medprof, na.rm = TRUE))
+
+## Base com as atribuições de aulas dos professores
+base_atribuicao <- data.table::fread(file = here(... = str_c("03-Dados/", bases_desafio[17])),
+                  sep = ",",
+                  encoding = "UTF-8", integer64 = "character") %>% 
+  as_tibble()
+
+
+```
+
+## Análise 03
+Cruzamento dos dados dos professores que lecionaram para as etapas que participaram no SARESP 2018.
+
+```{r}
+bd_formacao_servidor <- base_formacao_servidores %>% 
+  select(CIE_ESCOLA, CPF, FORMACAO, NMCARGO_E) %>% 
+  separate(col = FORMACAO, sep = "\\+", into = c(str_c("FORMACAO_", 1:6))) %>% 
+  select(-FORMACAO_6) %>% 
+  gather(key = "QT_FORMACOES", value = "FORMACAO", -CIE_ESCOLA, -CPF, -NMCARGO_E) %>%
+  filter(!is.na(FORMACAO) & CIE_ESCOLA != 0) %>% 
+  mutate(FORMACAO = str_trim(string = FORMACAO, side = "both")) %>% 
+  arrange(CPF, FORMACAO) %>% 
+  group_by(CPF) %>% 
+  slice(1) %>% 
+  ungroup() %>% 
+  select(CPF, NMCARGO_E, FORMACAO)
+
+base_formacao_atual <- base_carga_horaria %>% 
+  select(CPF, CODESC, CICLO, JORNADA, MATERIA, DEN_MATERIA, TOT_GERAL_AULA) %>% 
+  group_by(CPF, CODESC, CICLO, JORNADA, MATERIA, DEN_MATERIA, TOT_GERAL_AULA) %>% 
+  slice(1) %>% 
+  ungroup() %>% 
+  left_join(bd_formacao_servidor,
+            by = "CPF")
+
+
+disciplinas_saresp <- base_saresp_escolas_sp %>% 
+  pull(ds_comp) %>% 
+  unique()
+
+
+procv_disciplinas <- base_formacao_atual %>%
+  count(DEN_MATERIA) %>% 
+  filter(str_detect(string = DEN_MATERIA, pattern = c("MATEMATICA|FUNDAM\\.|PORTUGUESA"))) %>% 
+  mutate(n = c("ENS-FUNDAMENTAL",
+               rep(disciplinas_saresp[1], 4),
+               rep(disciplinas_saresp[2], 4))) %>% 
+  setNames(c("DEN_MATERIA", "NOME_DISCIPLINA"))
+
+
+### Cruzamento que contém a formação dos professores com os nomes corretos das disciplinas
+bd_formacao_prof <- base_formacao_atual %>% 
+  filter(!is.na(FORMACAO)) %>% 
+  left_join(procv_disciplinas,
+            by = "DEN_MATERIA") %>% 
+  filter(!is.na(NOME_DISCIPLINA)) %>% 
+  mutate(ETAPAS = case_when(CICLO == "CI" ~ "ANOS_INICIAIS",
+                            CICLO == "CII" ~ "ANOS_FINAIS",
+                            TRUE ~ "ENSINO_MEDIO")) %>% 
+  arrange(CODESC) %>% 
+  select(CPF, CODESC, ETAPAS, NOME_DISCIPLINA, FORMACAO, TOT_GERAL_AULA)
+
+### Cruzamento que contém o desempenho no saresp por disciplina e os professores, e suas respectivas formações, que lecionam para aquela etapa-disciplina
+bd_formacao_saresp <- base_saresp_escolas_sp_18 %>% 
+  ungroup() %>% 
+  mutate(ETAPAS = case_when(SERIE_ANO %in% c("3º Ano EF", "5º Ano EF") ~ "ANOS_INICIAIS",
+                            SERIE_ANO %in% c("7º Ano EF", "9º Ano EF") ~ "ANOS_FINAIS",
+                            TRUE ~ "ENSINO_MEDIO")) %>% 
+  left_join(bd_formacao_prof,
+            by = c("CODESC", "ds_comp" = "NOME_DISCIPLINA", "ETAPAS")) %>% 
+  filter(!is.na(CPF)) %>% 
+  arrange(CODESC)
+
+
+x <- bd_formacao_saresp %>% 
+  left_join(base_segmentos_escolares,
+            by = "CODESC")
+
+CrossTable(x = x$FORMACAO,
+           y = x$SEGMENTO,
+           digits = 2, prop.r = F, prop.t = F, prop.c = T, prop.chisq = F)
+
+```
