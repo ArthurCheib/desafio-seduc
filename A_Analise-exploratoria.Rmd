@@ -451,6 +451,50 @@ base_formacao_servidores %>%
   spread(key = FORMACAO, value = PERC_ESCOLARIDADE, fill = 0) %>% 
   View()
 
+
+### Geom_jitter
+### Grau de escolaridade do professorado por escola
+base_formacao_servidores %>% 
+  select(CIE_ESCOLA, CPF, FORMACAO, NMCARGO_E) %>% 
+  separate(col = FORMACAO, sep = "\\+", into = c(str_c("FORMACAO_", 1:6))) %>% 
+  select(-FORMACAO_6) %>% 
+  gather(key = "QT_FORMACOES", value = "FORMACAO", -CIE_ESCOLA, -CPF, -NMCARGO_E) %>% 
+  arrange(CIE_ESCOLA, CPF) %>% 
+  filter(!is.na(FORMACAO) & CIE_ESCOLA != 0) %>% 
+  arrange(CPF, desc(QT_FORMACOES)) %>% 
+  group_by(CPF) %>% 
+  slice(1) %>%
+  ungroup() %>% 
+  mutate(FORMACAO = str_trim(FORMACAO, side = "both")) %>%
+  mutate(FORMACAO = fct_recode(FORMACAO, "GRADUAÇÃO" = "LICENCIATURA"),
+         FORMACAO = factor(FORMACAO,
+                           levels = c("ENSINO FUNDAMENTAL",
+                                      "ENSINO MÉDIO",
+                                      "GRADUAÇÃO",
+                                      "BACHARELADO/TECNÓLOGO",
+                                      "ESPECIALIZAÇÃO",
+                                      "MESTRADO",
+                                      "DOUTORADO",
+                                      "APERF/EXTENSÃO CULTURAL",
+                                      "S/INFO"),
+                           ordered = T)) %>%
+  left_join(base_segmentos_escolares,
+            by = c("CIE_ESCOLA" = "CODESC")) %>% 
+  na.omit() %>% 
+  filter(!FORMACAO %in% c("S/INFO", "APERF/EXTENSÃO CULTURAL")) %>% 
+  filter(SEGMENTO != "Corpo da Pirâmide") %>% 
+  head(15000) %>% 
+  ggplot(aes(x = SEGMENTO, y = FORMACAO)) +
+  geom_jitter(aes(color = FORMACAO), alpha = 0.75) +
+  theme_wsj() +
+  labs(title = "Quantidade de professores por grau de escolaridade",
+       subtitle = "1 ponto = 1 professor",
+       y = "",
+       x = "",
+       caption = "Dados abertos SEDUC | @ArthurCheib") +
+  theme(legend.position = "none",
+        plot.title = element_text(size = 16))
+
 ```
 
 ### 2.7 - Base 7: servidores ativos
