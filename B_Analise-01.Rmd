@@ -179,7 +179,7 @@ base_ausencias_2019_total %>%
        subtitle = "Percentual de faltas injustificadas em relação ao total, por escola versus o desempenho no SARESP",
        x = "Média no SARESP",
        y = "% faltas Injustificadas em relação ao total",
-       caption = "Fonte: Dados abertos do Estado de São Paulo | @DesafioDeDados") +
+       caption = "Fonte: Dados abertos do Estado de São Paulo | @ArthurCheib") +
   theme(plot.title = element_text(colour = "black", face = "bold", size = 15),
         plot.subtitle = element_text(colour = "cornsilk4", size = 12),
         plot.caption = element_text(colour = "cornsilk4", size = 11.5),
