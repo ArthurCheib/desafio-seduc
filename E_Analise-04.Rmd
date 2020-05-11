@@ -1,0 +1,331 @@
+---
+title: "E_Analise-04"
+author: "Arthur Cheib"
+date: "15/04/2020"
+output: html_document
+---
+
+## 0. Infraestrutura
+
+Bases e pacotes necessários para a análise.
+
+```{r include=FALSE}
+### Pacotes utilizados
+library(tidyverse)
+library(here)
+library(data.table)
+library(janitor)
+library(corrplot)
+library(gmodels)
+
+### Bases a serem inspecionadas
+bases_desafio <- list.files(here(... = "03-Dados/"), pattern = ".csv")
+
+### Base de segmentos escolares
+load(file = here("03-Dados/35_base_segmentos_escolas.RData"))
+
+## Base os servidores ativos em Novembro de 2019
+base_servidores <- data.table::fread(file = here(... = str_c("03-Dados/", bases_desafio[20])),
+                  sep = ";",
+                  encoding = "UTF-8") %>% 
+  as_tibble()
+
+## Base com a formação de maior grau dos servidores - atualizada sem obrigatoriedade.
+base_formacao_servidores <- data.table::fread(file = here(... = str_c("03-Dados/", bases_desafio[21])),
+                  sep = ";",
+                  encoding = "UTF-8") %>% 
+  as_tibble()
+  
+### Histórico de diretores
+base_diretores <- data.table::fread(file = here(... = str_c("03-Dados/", bases_desafio[2])),
+                  sep = ";",
+                  encoding = "UTF-8") %>% 
+  as_tibble() %>%
+  arrange(CD_ESCOLA)
+
+### Desempenho IDESP
+base_idesp_escolas_sp_18 <- data.table::fread(file = here(... = str_c("03-Dados/", bases_desafio[7])),
+                  sep = ";",
+                  encoding = "UTF-8") %>% 
+  as_tibble()
+
+```
+
+## 1. Análise: perfil do gestor da educação pública de Sp
+
+Para a criação do perfil do gestor (direção) da educação pública (enfocando no desempenho das escolas no IDESP), analisaremos as seguintes variáveis:
+
+1) Idade - ok
+2) Anos de trabalho - ok
+3) Grau de escolaridade - ok
+4) Quantidade de faltas por categoria
+5) Sexo - ok
+6) Trabalho ou não em mais de uma escola
+
+```{r}
+### Obtendo os dados de sexo,idade e tempo de trabalho - por CPF - e cruzando essas informações com a base de escolaridade.
+pre_base_analise_servidores <- base_servidores %>% 
+  mutate(ANOS_TRAB_CARGO_C = as.numeric(ANOS_TRAB_CARGO_C)) %>% 
+  group_by(CPF, SEXO, IDADE) %>%
+  summarize(TEMPO_TRABALHO = sum(ANOS_TRAB_CARGO_C, na.rm = T)) %>% 
+  arrange(CPF) %>% 
+  left_join(base_formacao_servidores %>% 
+              select(CPF, FORMACAO) %>% 
+              group_by(CPF, FORMACAO) %>% 
+              slice(1) %>% 
+              ungroup(),
+             by = "CPF") %>% 
+  filter(!is.na(FORMACAO)) %>% 
+  ungroup()
+
+### Trabalhando a base de servidores para obter a formação de escolaridade mais elevada por servidor.
+base_analise_servidores <- pre_base_analise_servidores %>% 
+  separate(col = FORMACAO, sep = "\\+", into = c(str_c("FORMACAO_", 1:6))) %>% 
+  select(-FORMACAO_6) %>% 
+  gather(key = "QT_FORMACOES", value = "FORMACAO", -CPF, -SEXO, -IDADE, -TEMPO_TRABALHO) %>%
+  filter(!is.na(FORMACAO)) %>% 
+  mutate(FORMACAO = str_trim(string = FORMACAO, side = "both"),
+         QT_FORMACOES = factor(QT_FORMACOES,
+                                levels = c("FORMACAO_1", "FORMACAO_2", "FORMACAO_3", "FORMACAO_4", "FORMACAO_5"))) %>% 
+  arrange(CPF, desc(QT_FORMACOES)) %>% 
+  group_by(CPF) %>% 
+  slice(1) %>% 
+  ungroup()
+```
+
+Criando a base da dados que nos permitirá filtrar da base de dados para obter apenas os dados de diretores escolares:
+
+```{r}
+### Criando o vetor que contém o conjunto das escolas que possuíram diretoria durante os 6 anos dos dados (2014-2019)
+escolas_com_diretoria_6anos <- base_diretores %>% 
+  select(CD_ESCOLA, NR_CPF, `2014`:`2019`) %>%
+  gather(key = "ANO", value = "DIRETORIA", -NR_CPF, -CD_ESCOLA) %>%
+  mutate(DIRETORIA = as.numeric(as.character(fct_recode(DIRETORIA, "0" = "NAO", "1" = "SIM")))) %>%
+  filter(DIRETORIA == 1) %>% 
+  arrange(CD_ESCOLA, ANO) %>% 
+  group_by(CD_ESCOLA) %>% 
+  summarize(ANOS_COM_D = n_distinct(ANO)) %>% 
+  arrange(ANOS_COM_D) %>% 
+  filter(ANOS_COM_D == 6) %>% 
+  pull(CD_ESCOLA)
+
+## Criando a data frame que contém o a equipe da diretoria de cada escola
+base_equipe_diretores <- base_diretores %>% 
+  filter(CD_ESCOLA %in% escolas_com_diretoria_6anos) %>% 
+  select(CD_ESCOLA, NR_CPF, `2014`:`2019`) %>%
+  gather(key = "ANO", value = "DIRETORIA", -NR_CPF, -CD_ESCOLA) %>%
+  mutate(DIRETORIA = as.numeric(as.character(fct_recode(DIRETORIA, "0" = "NAO", "1" = "SIM")))) %>% 
+  filter(DIRETORIA == 1) %>%
+  ungroup() %>% 
+  select(-DIRETORIA) %>% 
+  arrange(CD_ESCOLA, ANO, NR_CPF)
+
+```
+
+Filtrando a base de dados para deixar remanescente apenas os diretores e os diretores do ano de 2018.
+
+```{r}
+### Base que contém apenas os CPF's de diretores para o ano de 2018
+base_analise_diretores <- base_equipe_diretores %>% 
+  filter(ANO == 2018) %>% 
+  left_join(base_analise_servidores,
+            by = c("NR_CPF" = "CPF")) %>% 
+  filter(!is.na(IDADE)) %>% 
+  mutate(QT_FORMACOES = as.numeric(str_extract(string = QT_FORMACOES, pattern = "\\d")))
+
+
+### Base que contém apenas o top 5% em desempenho das séries no IDESP e suas respectivas escolas
+base_idesp_analise <- base_idesp_escolas_sp_18 %>% 
+  select(-ANO_LETIVO, -CODIGO_INEP, -CODIGO_DIRETORIA, -NOME_DIRETORIA, -NOME_ESCOLA, -NOME_MUNICIPIO) %>% 
+  gather(key = "ETAPAS", value = "NOTA_IDESP", -CODIGO_CIE) %>% 
+  arrange(CODIGO_CIE) %>% 
+  mutate(ETAPAS = factor(ETAPAS, levels = c("ANOS_INICIAIS", "ANOS_FINAIS", "ENSINO_MEDIO"))) %>%
+  filter(!is.na(NOTA_IDESP))
+
+colnames(base_idesp_analise)[1] <- "CODESC"
+
+
+### Escolas das séries com 5% mais alto desempenho no SARESP
+base_escolas_top5_analise <- base_idesp_analise %>% 
+  arrange(desc(NOTA_IDESP)) %>% 
+  group_by(ETAPAS) %>% 
+  top_frac(x = ., n = .05, wt = NOTA_IDESP) %>%
+  ungroup()
+
+```
+
+Interessa saber agora: quem são os diretores das escolas que possuem séries entre os top 5% em desempenho no IDESP
+
+```{r}
+### Vetor que segmenta as escolas com top rendimento por etapa
+top5_anos_iniciais <- base_escolas_top5_analise %>% 
+  filter(ETAPAS == "ANOS_INICIAIS") %>% 
+  pull(CODESC) %>% 
+  unique()
+
+top5_anos_finais <- base_escolas_top5_analise %>% 
+  filter(ETAPAS == "ANOS_FINAIS") %>% 
+  pull(CODESC) %>% 
+  unique()
+
+top5_em <- base_escolas_top5_analise %>% 
+  filter(ETAPAS == "ENSINO_MEDIO") %>% 
+  pull(CODESC) %>% 
+  unique()
+```
+
+ANOS INICIAIS - Análise do perfil de cada diretor para as escolas com melhor desempenho no idesp (top 5)
+
+```{r}
+### Criação da base de diretores do top5 anos iniciais
+base_analise_top5_AI <- base_analise_diretores %>% 
+  filter(CD_ESCOLA %in% top5_anos_iniciais)
+
+## Início da análise do perfil
+
+### Percentual de formação por escolaridade
+base_analise_top5_AI %>% 
+  tabyl(FORMACAO) %>% 
+  adorn_pct_formatting()
+
+### Sexo
+base_analise_top5_AI %>% 
+  tabyl(SEXO) %>% 
+  adorn_pct_formatting()
+
+### Idade
+base_analise_top5_AI %>% 
+  pull(IDADE) %>% 
+  mean(.)
+
+### Tempo de casa
+base_analise_top5_AI %>% 
+  pull(TEMPO_TRABALHO) %>% 
+  mean(.)
+
+```
+
+ANOS FINAIS - Análise do perfil de cada diretor para as escolas com melhor desempenho no idesp (top 5)
+
+```{r}
+### Criação da base de diretores do top5 anos finais
+base_analise_top5_AF <- base_analise_diretores %>% 
+  filter(CD_ESCOLA %in% top5_anos_finais)
+
+## Início da análise do perfil
+
+### Percentual de formação por escolaridade
+base_analise_top5_AF %>% 
+  tabyl(FORMACAO) %>% 
+  adorn_pct_formatting()
+
+### Sexo
+base_analise_top5_AF %>% 
+  tabyl(SEXO) %>% 
+  adorn_pct_formatting()
+
+### Idade
+base_analise_top5_AF %>% 
+  pull(IDADE) %>% 
+  mean(.)
+
+### Tempo de casa
+base_analise_top5_AF %>% 
+  pull(TEMPO_TRABALHO) %>% 
+  mean(.)
+
+```
+
+ENSINO MÉDIO - Análise do perfil de cada diretor para as escolas com melhor desempenho no idesp (top 5)
+
+```{r}
+### Criação da base de diretores do top5 ensino médio
+base_analise_top5_EM <- base_analise_diretores %>% 
+  filter(CD_ESCOLA %in% top5_em)
+
+## Início da análise do perfil
+
+### Percentual de formação por escolaridade
+base_analise_top5_EM %>% 
+  tabyl(FORMACAO) %>% 
+  adorn_pct_formatting()
+
+### Sexo
+base_analise_top5_EM %>% 
+  tabyl(SEXO) %>% 
+  adorn_pct_formatting()
+
+### Idade
+base_analise_top5_EM %>% 
+  pull(IDADE) %>% 
+  mean(.)
+
+### Tempo de casa
+base_analise_top5_EM %>% 
+  pull(TEMPO_TRABALHO) %>% 
+  mean(.)
+
+```
+
+Breve análise das escolas com pior desempenho no IDESP e o perfil de seus diretores
+
+```{r}
+### Escolas das séries com 5% mais alto desempenho no SARESP
+base_escolas_bottom5_analise <- base_idesp_analise %>% 
+  arrange(NOTA_IDESP) %>% 
+  group_by(ETAPAS) %>% 
+  top_frac(x = ., n = .05, wt = NOTA_IDESP) %>%
+  ungroup()
+
+```
+
+Interessa saber agora: quem são os diretores das escolas que possuem séries entre os top 5% em desempenho no IDESP
+
+```{r}
+### Vetor que segmenta as escolas com bottom rendimento por etapa
+bottom5_anos_iniciais <- base_escolas_bottom5_analise %>% 
+  filter(ETAPAS == "ANOS_INICIAIS") %>% 
+  pull(CODESC) %>% 
+  unique()
+
+bottom5_anos_finais <- base_escolas_bottom5_analise %>% 
+  filter(ETAPAS == "ANOS_FINAIS") %>% 
+  pull(CODESC) %>% 
+  unique()
+
+bottom5_em <- base_escolas_bottom5_analise %>% 
+  filter(ETAPAS == "ENSINO_MEDIO") %>% 
+  pull(CODESC) %>% 
+  unique()
+```
+
+ENSINO MÉDIO - Análise do perfil de cada diretor para as escolas com pior desempenho no idesp ( bottom 5)
+
+```{r}
+### Criação da base de diretores do bottom5 ensino médio
+base_escolas_bottom5_EM <- base_analise_diretores %>% 
+  filter(CD_ESCOLA %in% bottom5_em)
+
+## Início da análise do perfil
+
+### Percentual de formação por escolaridade
+base_escolas_bottom5_EM %>% 
+  tabyl(FORMACAO) %>% 
+  adorn_pct_formatting()
+
+### Sexo
+base_escolas_bottom5_EM %>% 
+  tabyl(SEXO) %>% 
+  adorn_pct_formatting()
+
+### Idade
+base_escolas_bottom5_EM %>% 
+  pull(IDADE) %>% 
+  mean(.)
+
+### Tempo de casa
+base_analise_top5_EM %>% 
+  pull(TEMPO_TRABALHO) %>% 
+  mean(.)
+
+```
