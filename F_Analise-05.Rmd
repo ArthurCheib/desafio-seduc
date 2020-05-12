@@ -1,0 +1,196 @@
+---
+title: "F_Analise-05"
+author: "Arthur Cheib"
+date: "16/04/2020"
+output: html_document
+---
+
+```{r include=FALSE}
+### Pacotes utilizados
+library(tidyverse)
+library(here)
+library(data.table)
+library(janitor)
+library(corrplot)
+library(gmodels)
+
+## Base com as notas por escolas do SARESP por escola - 2018 (USADA AQUI APENAS PARA EFEITOS DE PADRONIZAÇÃO DA VARIÁVEL DISCIP)
+base_saresp_escolas_sp_18 <- data.table::fread(file = here(... = str_c("03-Dados/", bases_desafio[15])),
+                  sep = ";",
+                  encoding = "Latin-1") %>% 
+  as_tibble() %>%
+  filter(medprof != "") %>% 
+  arrange(CODESC) %>% 
+  mutate(medprof = as.numeric(str_replace(string = medprof, pattern = "\\,", replacement = "."))) %>% 
+  group_by(CODESC, SERIE_ANO, ds_comp) %>% 
+  summarize(MEDIA_SARESP = mean(medprof, na.rm = TRUE))
+
+
+### Bases a serem inspecionadas
+bases_desafio <- list.files(here(... = "03-Dados/"), pattern = ".csv")
+
+### Base de segmentos escolares
+load(file = here("03-Dados/35_base_segmentos_escolas.RData"))
+
+### Base contendo a carga horária dos professores em Abril de 2019 (basicamente, quem deu aula ano passado)
+base_carga_horaria <- data.table::fread(file = here(... = str_c("03-Dados/", bases_desafio[24])),
+                  sep = ";",
+                  encoding = "UTF-8") %>% 
+  as_tibble()
+
+
+## Base com as notas por escolas do idesp - 2018
+base_idesp_escolas_sp_18 <- data.table::fread(file = here(... = str_c("03-Dados/", bases_desafio[7])),
+                  sep = ";",
+                  encoding = "UTF-8") %>% 
+  as_tibble()
+
+base_idesp_analise <- base_idesp_escolas_sp_18 %>% 
+  select(-ANO_LETIVO, -CODIGO_INEP, -CODIGO_DIRETORIA, -NOME_DIRETORIA, -NOME_ESCOLA, -NOME_MUNICIPIO) %>% 
+  gather(key = "ETAPAS", value = "NOTA_IDESP", -CODIGO_CIE) %>% 
+  arrange(CODIGO_CIE) %>% 
+  mutate(ETAPAS = factor(ETAPAS, levels = c("ANOS_INICIAIS", "ANOS_FINAIS", "ENSINO_MEDIO")))
+
+colnames(base_idesp_analise)[1] <- "CODESC"
+
+base_idesp_analise %>% 
+  group_by(ETAPAS) %>% 
+  summarize(MEDIA_IDESP = mean(NOTA_IDESP, na.rm = TRUE))
+
+## Base das ausências de Abril/19
+base_ausencias_abril <- data.table::fread(file = here(... = str_c("03-Dados/", bases_desafio[4])),
+                  sep = ";",
+                  encoding = "UTF-8") %>% 
+  as_tibble()
+
+## Base das ausências de Novembro/19
+base_ausencias_novembro <- data.table::fread(file = here(... = str_c("03-Dados/", bases_desafio[6])),
+                  sep = ";",
+                  encoding = "UTF-8") %>% 
+  as_tibble()
+
+```
+
+Cruzamento que nos permite obter uma base de dados contendo a disciplina lecionada por cada cpf, bem como a quantidade de faltas do mesmo - por categorias de faltas.
+
+```{r - Tratamento das Bases de Ausência de Servidor}
+#### Tratamento da base de ausência que nos permite obter o total de faltas - por categoria da falta - para cada CPF 
+base_perc_ausencias_abril <- base_ausencias_abril %>% 
+  select(-RG, -DI, -NOME_SERVIDOR, -UA_EXERC, -id_interno, -CARGO_EXERC, -TOTAL_DIAS_MES, -TOT_DIAS_AUSENCIAS) %>%
+  group_by(CIE_ESCOLA, CPF) %>% 
+  summarize_if(is.numeric, sum, na.rm = TRUE) %>% 
+  arrange(CIE_ESCOLA) %>% 
+  gather(key = "TP_FALTA", value = "FALTAS_ABRIL", -CIE_ESCOLA, -CPF) %>%
+  arrange(CIE_ESCOLA, CPF) %>% 
+  filter(FALTAS_ABRIL != 0) %>% 
+  ungroup()
+
+base_perc_ausencias_novembro <- base_ausencias_novembro %>% 
+  select(-RG, -DI, -NOME_SERVIDOR, -UA_EXERC, -id_interno, -CARGO_EXERC, -TOTAL_DIAS_MES, -TOT_DIAS_AUSENCIAS) %>%
+  group_by(CIE_ESCOLA, CPF) %>% 
+  summarize_if(is.numeric, sum, na.rm = TRUE) %>% 
+  arrange(CIE_ESCOLA) %>% 
+  gather(key = "TP_FALTA", value = "FALTAS_NOV", -CIE_ESCOLA, -CPF) %>%
+  arrange(CIE_ESCOLA, CPF) %>% 
+  filter(FALTAS_NOV != 0) %>% 
+  ungroup()
+
+
+### Unificando as bases de faltas de Abril e Novembro
+base_perc_ausencias_total <- base_perc_ausencias_abril %>%  
+  left_join(base_perc_ausencias_novembro,
+            by = c("CIE_ESCOLA", "TP_FALTA", "CPF")) %>% 
+  arrange(CIE_ESCOLA, CPF) %>% 
+  filter(CIE_ESCOLA != 0)
+
+base_perc_ausencias_total[is.na(base_perc_ausencias_total)] <- 0
+
+### Somatório da quantidade de faltas - total de faltas em 2 meses de trabalho
+base_analise_ausencia <- base_perc_ausencias_total %>% 
+  mutate(FALTAS = (FALTAS_ABRIL + FALTAS_NOV)) %>%
+  filter(!TP_FALTA %in% c("TT_DIAS_LIC_PREMIO", "TT_DIAS_LIC_GESTANTE")) %>% 
+  select(-FALTAS_ABRIL, -FALTAS_NOV) %>% 
+  group_by(CIE_ESCOLA, CPF) %>% 
+  summarize(FALTAS = sum(FALTAS)) %>% 
+  ungroup() %>% 
+  group_by(CIE_ESCOLA) %>% 
+  mutate(TOTAL_FALTAS = sum(FALTAS)) %>% 
+  ungroup() %>% 
+  arrange(CIE_ESCOLA, CPF) %>% 
+  mutate(PERC_INDIVIDUAL = round(FALTAS/TOTAL_FALTAS*100, digits = 1))
+
+
+```
+
+De acordo com o Edital é base de carga horária que nos permite identificar em quais escolas e para quais disciplinas os professores estão lecionando no ano corrente.
+
+```{r - Tratamento da base de carga horária dos servidores}
+
+### Antes de se iniciar o tratamento da base de dados contendo a carga horária dos professores é necessário, em primeiro lugar, realizar a padronização da variável que contém as disciplinas. Somente com essa padronização - que supõe uma perda de dados - será possível cruzar os dados, posteriormente, com a bases de dados das notas do IDESP (pois esse indicador leva em conta o SARESP).
+disciplinas_saresp <- base_saresp_escolas_sp_18 %>% 
+  pull(ds_comp) %>% 
+  unique()
+
+procv_disciplinas <- base_carga_horaria %>%
+  count(DEN_MATERIA) %>% 
+  filter(str_detect(string = DEN_MATERIA, pattern = c("MATEMATICA|FUNDAM\\.|PORTUGUESA|LIN PORT LIT"))) %>% 
+  mutate(n = c("ANOS_INICIAIS", disciplinas_saresp[1], disciplinas_saresp[1], disciplinas_saresp[2])) %>% 
+  setNames(c("DEN_MATERIA", "NOME_DISCIPLINA")) %>% 
+  .[-1, ]
+
+
+### Base contendo a disciplina lecionada pelo professor em 2019 - para efeitos de cálculo consideraremos que ele foi o prof 2018
+base_analise_ch <- base_carga_horaria %>%
+  select(CPF, CODESC, CICLO, MATERIA, DEN_MATERIA) %>% 
+  group_by(CPF, CODESC, CICLO, MATERIA, DEN_MATERIA) %>% 
+  slice(1) %>% 
+  ungroup() %>% 
+  left_join(procv_disciplinas,
+            by = "DEN_MATERIA") %>% 
+  filter(!is.na(NOME_DISCIPLINA)) %>% 
+  mutate(ETAPAS = case_when(CICLO == "CI" ~ "ANOS_INICIAIS",
+                            CICLO == "CII" ~ "ANOS_FINAIS",
+                            TRUE ~ "ENSINO_MEDIO")) %>% 
+  select(-CICLO, -DEN_MATERIA, -MATERIA) %>% 
+  arrange(CODESC, CPF) %>% 
+  group_by(CPF, CODESC, ETAPAS) %>% 
+  slice(1) %>% 
+  ungroup() %>% 
+  arrange(CODESC, CPF) %>% 
+  select(-NOME_DISCIPLINA)
+
+
+```
+
+Join da base de ausências com a base de carga horária
+
+```{r}
+### Aqui realizamos a junção das duas bases preparadas acima. Após isso, calculamos o somatório da contribuição percentual individual de todos os professores de matemática e português - disciplinas do SARESP - para a "sua" respectiva etapa de ensino.
+pre_base_analise <- base_analise_ch %>% 
+  left_join(base_analise_ausencia,
+            by = c("CPF", "CODESC" = "CIE_ESCOLA")) %>% 
+  filter(!is.na(FALTAS)) %>%
+  filter(TOTAL_FALTAS > 80) %>% 
+  group_by(CODESC, ETAPAS) %>% 
+  summarize(TOTAL_FALTAS = sum(PERC_INDIVIDUAL)) %>% 
+  ungroup()
+
+```
+
+Join final e gráfico
+
+```{r}
+### Agora uniremos a base preparada acima com os dados do IDESP a fim de verificar se há alguma correlação entre o número de faltas do corpo docente em algumas etapas e o desempenho dos alunos dessas mesmas etapas no IDESP.
+
+pre_base_analise %>% 
+  left_join(base_idesp_analise,
+            by = c("CODESC", "ETAPAS")) %>% 
+  filter(!is.na(NOTA_IDESP)) %>% 
+  ggplot(aes(x = TOTAL_FALTAS, y = NOTA_IDESP)) +
+  geom_point(aes(alpha = 0.85)) +
+  facet_wrap(~ETAPAS) +
+  geom_smooth(method = "lm")
+
+
+```
+
