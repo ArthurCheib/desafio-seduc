@@ -5,8 +5,121 @@ date: "06/07/2020"
 output: html_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+## Bibliotecas
+
+```{r include=FALSE}
+### Pacotes utilizados
+library(tidyverse)
+library(here)
+library(data.table)
+library(janitor)
+library(corrplot)
+library(gmodels)
+library(readxl)
+
 ```
 
-## Análise 
+## Bases de dados
+
+```{r include=FALSE}
+### Bases a serem inspecionadas
+bases_desafio <- list.files(here(... = "03-Dados/"), pattern = ".csv")
+
+## Base com as notas por escolas do SARESP por escola - 2018
+base_saresp_escolas_sp_19 <- data.table::fread(file = here(... = str_c("03-Dados/", bases_desafio[16])),
+                  sep = ";",
+                  encoding = "UTF-8") %>% 
+  as_tibble() %>%
+  filter(medprof != "") %>% 
+  arrange(CODESC) %>% 
+  mutate(medprof = as.numeric(str_replace(string = medprof, pattern = "\\,", replacement = "."))) %>% 
+  group_by(CODESC, SERIE_ANO, ds_comp) %>% 
+  summarize(MEDIA_SARESP = mean(medprof, na.rm = TRUE)) %>% 
+  filter(SERIE_ANO %in% c("9º Ano EF", "EM-3ª série"))
+
+## Bases de "Ausências de servidores"
+
+novos_arquivos <- str_c(here("03-Dados/001_Novos_dados"), "/", list.files(here("/03-Dados/001_Novos_dados")))
+
+nomes <- list.files(here("/03-Dados/001_Novos_dados"))
+
+mark_read <- function(file, marked) {
+  
+  mark <- str_extract(string = marked, pattern = "\\d+")
+  
+  read_xlsx(path = file) %>% 
+    mutate(DATA = mark)
+  
+}
+
+# base_faltas <- map2_df(.x = novos_arquivos, .y = nomes, .f = mark_read)
+
+base_ausencias <- base_faltas %>% 
+  select(-REGIAO_EXERC, -DE_EXERC, -NOME_UA_EXERC, -MUNICIPIO_EXERC, -QUADRO_EXERC, -id_interno, -CARGO_EXERC, -CATEG_E, -TOTAL_DIAS_MES,-UA_EXERC) %>%
+  filter(CIE_ESCOLA != 0) %>% 
+  group_by(CIE_ESCOLA) %>% 
+  summarize_if(is.numeric, sum, na.rm = TRUE) %>% 
+  arrange(CIE_ESCOLA) %>% 
+  gather(key = "TP_FALTA", value = "FALTAS_2019", -CIE_ESCOLA) %>%
+  arrange(CIE_ESCOLA) %>% 
+  filter(FALTAS_2019 != 0) %>% 
+  ungroup() %>% 
+  group_by(CIE_ESCOLA) %>% 
+  mutate(TOTAL_FALTAS = sum(FALTAS_2019)) %>% 
+  mutate(PERC_FALTAS = round(FALTAS_2019/TOTAL_FALTAS, digits = 2)*100)
+```
+
+## Análise I - ausências
+
+### Gráfico inicial - primeira correlação.
+
+```{r}
+
+base_cruzamento <- base_ausencias %>% 
+  left_join(base_saresp_escolas_sp_19,
+            by = c("CIE_ESCOLA" = "CODESC")) %>% 
+  select(CIE_ESCOLA, everything(.), -FALTAS_2019, -TOTAL_FALTAS) %>% 
+  filter(!is.na(MEDIA_SARESP)) %>%
+  filter(TP_FALTA == "TT_DIAS_FALTA_INJUST") %>% 
+  ungroup()
+
+base_cruzamento %>% 
+  ggplot(aes(x = MEDIA_SARESP, y = PERC_FALTAS)) +
+  geom_point(alpha = 0.8) + 
+  facet_grid(SERIE_ANO ~ ds_comp, scales = "free_y") +
+  geom_smooth(method = "glm") +
+  theme_minimal() +
+  labs(title = "Percentual de faltas injustificadas e desempenho no SARESP - 2019",
+       subtitle = "Percentual de faltas injustificadas em relação ao total, por escola versus o desempenho no SARESP",
+       x = "Média no SARESP",
+       y = "% faltas Injustificadas em relação ao total",
+       caption = "Fonte: Dados abertos do Estado de São Paulo | @ArthurCheib") +
+  theme(plot.title = element_text(colour = "black", face = "bold", size = 15),
+        plot.subtitle = element_text(colour = "cornsilk4", size = 12),
+        plot.caption = element_text(colour = "cornsilk4", size = 11.5),
+        axis.text = element_text(size = 10),
+        axis.title.y = element_text(size = 12, colour = "black", face = "bold"),
+        axis.title.x = element_text(size = 12, colour = "black", face = "bold"))
+
+##
+
+write_delim(base_cruzamento, delim = ";", "C:/Users/arthu/Desktop/base.csv", )
+
+## Cálculo da correlação linear entre os pontos do gráfico
+etapa <- "EM-3ª série"
+disciplina <- "MATEMATICA"
+
+base_cruzamento_cor <- base_cruzamento %>% 
+  arrange(desc(MEDIA_SARESP)) %>%
+  filter(SERIE_ANO == etapa & ds_comp == disciplina)
+
+cor(x = base_cruzamento_cor$PERC_FALTAS, y = base_cruzamento_cor$MEDIA_SARESP)
+
+```
+
+## Análise II - rotatividade
+
+```{r}
+
+```
+
