@@ -121,5 +121,7 @@ cor(x = base_cruzamento_cor$PERC_FALTAS, y = base_cruzamento_cor$MEDIA_SARESP)
 
 ```{r}
 
+
+
 ```
 
