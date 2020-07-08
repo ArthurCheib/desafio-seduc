@@ -52,7 +52,7 @@ mark_read <- function(file, marked) {
   
 }
 
-# base_faltas <- map2_df(.x = novos_arquivos, .y = nomes, .f = mark_read)
+base_faltas <- map2_df(.x = novos_arquivos, .y = nomes, .f = mark_read)
 
 base_ausencias <- base_faltas %>% 
   select(-REGIAO_EXERC, -DE_EXERC, -NOME_UA_EXERC, -MUNICIPIO_EXERC, -QUADRO_EXERC, -id_interno, -CARGO_EXERC, -CATEG_E, -TOTAL_DIAS_MES,-UA_EXERC) %>%
@@ -65,8 +65,9 @@ base_ausencias <- base_faltas %>%
   filter(FALTAS_2019 != 0) %>% 
   ungroup() %>% 
   group_by(CIE_ESCOLA) %>% 
-  mutate(TOTAL_FALTAS = sum(FALTAS_2019)) %>% 
-  mutate(PERC_FALTAS = round(FALTAS_2019/TOTAL_FALTAS, digits = 2)*100)
+  mutate(TOTAL_FALTAS = sum(FALTAS_2019),
+         PERC_FALTAS = round(FALTAS_2019/TOTAL_FALTAS, digits = 2)*100) %>% 
+  ungroup()
 ```
 
 ## Análise I - ausências
@@ -74,6 +75,44 @@ base_ausencias <- base_faltas %>%
 ### Gráfico inicial - primeira correlação.
 
 ```{r}
+### Estrutura das faltas nas 10% melhores escolas
+base_ausencias %>% 
+  left_join(base_saresp_escolas_sp_19,
+            by = c("CIE_ESCOLA" = "CODESC")) %>% 
+  arrange(desc(MEDIA_SARESP)) %>% 
+  group_by(SERIE_ANO, ds_comp) %>% 
+  top_frac(n = .05, wt = MEDIA_SARESP) %>% 
+  tabyl(TP_FALTA, ) %>% 
+  adorn_pct_formatting() %>% 
+  arrange(desc(n)) %>% 
+  as_tibble() %>% 
+  setNames(c("TIPO_DE_FALTA", "ABS_TOP_5", "PERC_TOP_5")) %>% 
+  select(-2) %>% 
+  left_join(base_ausencias %>% 
+  left_join(base_saresp_escolas_sp_19,
+            by = c("CIE_ESCOLA" = "CODESC")) %>% 
+  arrange(desc(MEDIA_SARESP)) %>% 
+  group_by(SERIE_ANO, ds_comp) %>% 
+  top_frac(n = -.05, wt = MEDIA_SARESP) %>% 
+  tabyl(TP_FALTA) %>% 
+  adorn_pct_formatting() %>% 
+  arrange(desc(n)) %>% 
+  as_tibble() %>% 
+  setNames(c("TIPO_DE_FALTA", "ABS_BOTTOM_5", "PERC_BOTTOM_5")) %>% 
+  select(-2),
+  by = "TIPO_DE_FALTA")
+
+### Estrutura das faltas nas 10% piores escolas
+base_ausencias %>% 
+  left_join(base_saresp_escolas_sp_19,
+            by = c("CIE_ESCOLA" = "CODESC")) %>% 
+  arrange(desc(MEDIA_SARESP)) %>% 
+  group_by(SERIE_ANO, ds_comp) %>% 
+  top_frac(n = -.05, wt = MEDIA_SARESP) %>% 
+  tabyl(TP_FALTA) %>% 
+  adorn_pct_formatting() %>% 
+  arrange(desc(n)) %>% 
+  as_tibble() 
 
 base_cruzamento <- base_ausencias %>% 
   left_join(base_saresp_escolas_sp_19,
@@ -81,7 +120,8 @@ base_cruzamento <- base_ausencias %>%
   select(CIE_ESCOLA, everything(.), -FALTAS_2019, -TOTAL_FALTAS) %>% 
   filter(!is.na(MEDIA_SARESP)) %>%
   filter(TP_FALTA == "TT_DIAS_FALTA_INJUST") %>% 
-  ungroup()
+  ungroup() %>% 
+  arrange(CIE_ESCOLA, desc(MEDIA_SARESP))
 
 base_cruzamento %>% 
   ggplot(aes(x = MEDIA_SARESP, y = PERC_FALTAS)) +
