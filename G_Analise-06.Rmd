@@ -77,19 +77,21 @@ base_ausencias <- base_faltas %>%
 ```{r}
 ### Estrutura das faltas nas 10% melhores escolas
 base_ausencias %>% 
-  left_join(base_saresp_escolas_sp_19,
+  left_join(base_saresp_escolas_sp_19 %>% 
+              filter(SERIE_ANO == "EM-3ª série"),
             by = c("CIE_ESCOLA" = "CODESC")) %>% 
   arrange(desc(MEDIA_SARESP)) %>% 
   group_by(SERIE_ANO, ds_comp) %>% 
   top_frac(n = .05, wt = MEDIA_SARESP) %>% 
-  tabyl(TP_FALTA, ) %>% 
+  tabyl(TP_FALTA) %>% 
   adorn_pct_formatting() %>% 
   arrange(desc(n)) %>% 
   as_tibble() %>% 
   setNames(c("TIPO_DE_FALTA", "ABS_TOP_5", "PERC_TOP_5")) %>% 
-  select(-2) %>% 
+  select(everything()) %>% 
   left_join(base_ausencias %>% 
-  left_join(base_saresp_escolas_sp_19,
+  left_join(base_saresp_escolas_sp_19 %>% 
+              filter(SERIE_ANO == "EM-3ª série"),
             by = c("CIE_ESCOLA" = "CODESC")) %>% 
   arrange(desc(MEDIA_SARESP)) %>% 
   group_by(SERIE_ANO, ds_comp) %>% 
@@ -99,8 +101,7 @@ base_ausencias %>%
   arrange(desc(n)) %>% 
   as_tibble() %>% 
   setNames(c("TIPO_DE_FALTA", "ABS_BOTTOM_5", "PERC_BOTTOM_5")) %>% 
-  select(-2),
-  by = "TIPO_DE_FALTA")
+  select(everything()), by = "TIPO_DE_FALTA")
 
 ### Estrutura das faltas nas 10% piores escolas
 base_ausencias %>% 
@@ -130,10 +131,10 @@ base_cruzamento %>%
   geom_smooth(method = "glm") +
   theme_minimal() +
   labs(title = "Percentual de faltas injustificadas e desempenho no SARESP - 2019",
-       subtitle = "Percentual de faltas injustificadas em relação ao total, por escola versus o desempenho no SARESP",
-       x = "Média no SARESP",
+       subtitle = "Percentual de faltas injustificadas em relação ao total, versus o desempenho no SARESP - por escola",
+       x = "Nota no SARESP",
        y = "% faltas Injustificadas em relação ao total",
-       caption = "Fonte: Dados abertos do Estado de São Paulo | @ArthurCheib") +
+       caption = "Fonte: Dados abertos do Estado de São Paulo") +
   theme(plot.title = element_text(colour = "black", face = "bold", size = 15),
         plot.subtitle = element_text(colour = "cornsilk4", size = 12),
         plot.caption = element_text(colour = "cornsilk4", size = 11.5),
@@ -146,8 +147,8 @@ base_cruzamento %>%
 write_delim(base_cruzamento, delim = ";", "C:/Users/arthu/Desktop/base.csv", )
 
 ## Cálculo da correlação linear entre os pontos do gráfico
-etapa <- "EM-3ª série"
-disciplina <- "MATEMATICA"
+etapa <- "9º Ano EF"
+disciplina <- "LINGUA PORTUGUESA"
 
 base_cruzamento_cor <- base_cruzamento %>% 
   arrange(desc(MEDIA_SARESP)) %>%
