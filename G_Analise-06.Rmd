@@ -156,12 +156,3 @@ base_cruzamento_cor <- base_cruzamento %>%
 cor(x = base_cruzamento_cor$PERC_FALTAS, y = base_cruzamento_cor$MEDIA_SARESP)
 
 ```
-
-## Análise II - rotatividade
-
-```{r}
-
-
-
-```
-
